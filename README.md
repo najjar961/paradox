@@ -2,7 +2,7 @@
 
 **Chat with your documents. Store nothing.**
 
-[![tests](https://github.com/YOUR_GITHUB_USER/paradox/actions/workflows/tests.yml/badge.svg)](https://github.com/YOUR_GITHUB_USER/paradox/actions/workflows/tests.yml)
+[![tests](https://github.com/najjar961/paradox/actions/workflows/tests.yml/badge.svg)](https://github.com/najjar961/paradox/actions/workflows/tests.yml)
 ![license](https://img.shields.io/badge/license-AGPL--3.0-blue)
 ![self-hosted](https://img.shields.io/badge/self--hosted-docker-2f6f5e)
 
@@ -130,4 +130,4 @@ For a commercial licence without these terms, or a managed installation, get in 
 
 ## Website
 
-The landing page is [`docs/index.html`](docs/index.html). To put it online for free, open the repository's **Settings → Pages**, choose **Deploy from a branch**, then branch `main` and folder `/docs`. It will be live at `https://YOUR_GITHUB_USER.github.io/paradox/`.
+The landing page is [`docs/index.html`](docs/index.html). To put it online for free, open the repository's **Settings → Pages**, choose **Deploy from a branch**, then branch `main` and folder `/docs`. It will be live at `https://najjar961.github.io/paradox/`.
