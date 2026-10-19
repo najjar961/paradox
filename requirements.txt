@@ -1,0 +1,8 @@
+fastapi==0.148.0
+uvicorn[standard]==0.53.0
+httpx==0.28.1
+numpy==2.5.3
+pypdf==5.9.0
+python-docx==1.2.0
+bcrypt==5.0.0
+PyYAML==6.0.3

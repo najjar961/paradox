@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Paradox</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- Login -->
+  <main id="login-view" class="login" hidden>
+    <form id="login-form" class="login-card" autocomplete="on">
+      <div class="brand"><span class="dot"></span>Paradox</div>
+      <p class="muted">Chat with your documents. Everything lives in memory and disappears when you leave.</p>
+      <label>Username<input name="username" autocomplete="username" required maxlength="64"></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="256"></label>
+      <button type="submit" class="primary">Sign in</button>
+      <p id="login-error" class="error" role="alert"></p>
+    </form>
+  </main>
+
+  <!-- App -->
+  <div id="app-view" class="app" hidden>
+    <aside class="sidebar">
+      <div class="brand"><span class="dot"></span>Paradox</div>
+      <div class="side-head">
+        <span>Workspaces</span>
+        <button id="new-ws" class="icon" title="New workspace" aria-label="New workspace">+</button>
+      </div>
+      <nav id="ws-list" class="ws-list"></nav>
+      <div class="side-foot">
+        <div class="paradoxl-note">
+          <strong>Nothing is saved.</strong>
+          <span id="idle-note"></span>
+        </div>
+        <div class="user-row">
+          <span id="who"></span>
+          <button id="logout" class="ghost">Sign out &amp; wipe</button>
+        </div>
+      </div>
+    </aside>
+
+    <section class="main">
+      <header class="topbar">
+        <button id="menu" class="icon only-mobile" aria-label="Workspaces">☰</button>
+        <h1 id="ws-title" title="Rename">Workspace</h1>
+        <div class="top-actions">
+          <span id="model-tag" class="tag"></span>
+          <button id="toggle-docs" class="ghost">Documents <span id="doc-count" class="count">0</span></button>
+          <button id="toggle-settings" class="ghost">Settings</button>
+        </div>
+      </header>
+
+      <div class="body">
+        <div class="chat-col">
+          <div id="messages" class="messages" aria-live="polite"></div>
+          <form id="chat-form" class="composer">
+            <textarea id="chat-input" rows="1" maxlength="8000" placeholder="Ask about your documents…" required></textarea>
+            <button id="send" type="submit" class="primary">Send</button>
+          </form>
+        </div>
+
+        <aside id="docs-panel" class="panel" hidden>
+          <h2>Documents</h2>
+          <label id="drop" class="drop">
+            <input id="file-input" type="file" multiple hidden>
+            <span>Drop files here or <u>browse</u></span>
+            <small id="supported" class="muted"></small>
+          </label>
+          <ul id="doc-list" class="doc-list"></ul>
+        </aside>
+
+        <aside id="settings-panel" class="panel" hidden>
+          <h2>Workspace settings</h2>
+          <label>Name<input id="ws-name" maxlength="80"></label>
+          <label>Instructions for the model
+            <textarea id="ws-prompt" rows="6" maxlength="4000" placeholder="e.g. Answer as a security auditor. Be concise."></textarea>
+          </label>
+          <button id="save-settings" class="primary">Save</button>
+          <hr>
+          <button id="clear-chat" class="ghost">Clear chat history</button>
+          <button id="delete-ws" class="danger">Delete workspace</button>
+        </aside>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

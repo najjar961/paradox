@@ -1,0 +1,29 @@
+services:
+  paradox:
+    build: .
+    env_file: .env
+    environment:
+      USERS_FILE: /config/users.yaml
+      OLLAMA_URL: http://ollama:11434
+    volumes:
+      - ./users.yaml:/config/users.yaml:ro   # only the account list, mounted read-only
+    ports:
+      - "127.0.0.1:8000:8000"                # put a TLS reverse proxy in front for remote access
+    read_only: true                           # container filesystem is not writable
+    tmpfs:
+      - /tmp:size=64m,mode=1777               # RAM-backed scratch, never on disk
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on: [ollama]
+    restart: unless-stopped
+
+  # Local models. The volume holds model weights only, never user data.
+  # Remove this service if you use OpenAI or Anthropic instead.
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama-models:

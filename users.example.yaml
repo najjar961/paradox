@@ -1,0 +1,6 @@
+# Copy to users.yaml and add one line per user:
+#   python scripts/hash_password.py <username>
+# The app only reads this file; it never writes to it.
+users:
+  # demo user, password: change-me-please  (delete before going live)
+  demo: "$2b$12$.G2YGvvWaJsmuCUMyi/Uv.u7uSSQ/VxQibL9YjRpko0bwhDvOKNRq"
