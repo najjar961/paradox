@@ -130,4 +130,4 @@ For a commercial licence without these terms, or a managed installation, get in 
 
 ## Website
 
-The project's landing page lives in [`site/index.html`](site/index.html). To publish it with GitHub Pages, go to **Settings → Pages**, choose **Deploy from a branch**, branch `main`, and folder `/docs`. GitHub Pages only serves from the repository root or `/docs`, so copy `site/index.html` to `docs/index.html` first.
+The landing page is [`docs/index.html`](docs/index.html). To put it online for free, open the repository's **Settings → Pages**, choose **Deploy from a branch**, then branch `main` and folder `/docs`. It will be live at `https://YOUR_GITHUB_USER.github.io/paradox/`.
