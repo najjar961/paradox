@@ -127,3 +127,7 @@ Issues and pull requests are welcome. Run `python -m pytest -q` before opening a
 Paradox is licensed under the [GNU AGPL-3.0](LICENSE). You can use, modify and self-host it freely. If you offer a modified version to others over a network, you must make your source code available to those users under the same licence.
 
 For a commercial licence without these terms, or a managed installation, get in touch.
+
+## Website
+
+The project's landing page lives in [`site/index.html`](site/index.html). To publish it with GitHub Pages, go to **Settings → Pages**, choose **Deploy from a branch**, branch `main`, and folder `/docs`. GitHub Pages only serves from the repository root or `/docs`, so copy `site/index.html` to `docs/index.html` first.

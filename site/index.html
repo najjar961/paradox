@@ -1,0 +1,349 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Paradox</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Paradox is a self-hosted AI assistant for confidential documents. It reads everything and keeps nothing.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one narrow column of argument, with a live "document" in the hero that the visitor can wipe themselves. */
+:root {
+  --paper: #f2f5f3;
+  --sheet: #ffffff;
+  --ink: #142320;
+  --ink-soft: #52615d;
+  --rule: #d6dfdb;
+  --accent: #2f6f5e;
+  --accent-ink: #ffffff;
+  --accent-wash: #dcebe5;
+  --redact: #142320;
+  --warn: #9a5b12;
+  --display: "Bricolage Grotesque", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0e1513; --sheet: #16201d; --ink: #e4ece9; --ink-soft: #93a39e; --rule: #26332f;
+    --accent: #63b89e; --accent-ink: #0a1714; --accent-wash: #1c3029; --redact: #e4ece9; --warn: #e0a55a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0e1513; --sheet: #16201d; --ink: #e4ece9; --ink-soft: #93a39e; --rule: #26332f;
+  --accent: #63b89e; --accent-ink: #0a1714; --accent-wash: #1c3029; --redact: #e4ece9; --warn: #e0a55a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--paper); color: var(--ink);
+  font: 16px/1.6 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+a { color: inherit; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.wrap { max-width: 1080px; margin: 0 auto; }
+
+/* Nav */
+nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 22px; }
+.mark { display: flex; align-items: center; gap: 10px; font: 800 20px/1 var(--display); letter-spacing: -.02em; text-decoration: none; }
+.mark i { width: 14px; height: 14px; border-radius: 50%; border: 2.5px dashed var(--accent); display: inline-block; }
+nav .links { display: flex; gap: 20px; font-size: 14.5px; }
+nav .links a { text-decoration: none; color: var(--ink-soft); }
+nav .links a:hover { color: var(--ink); }
+
+/* Hero */
+.hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px; align-items: center; padding-block: 48px 72px; }
+.hero > * { min-width: 0; }
+.eyebrow { font: 500 12.5px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 0 0 18px; }
+h1 { font: 800 clamp(44px, 7vw, 82px)/.95 var(--display); letter-spacing: -.035em; margin: 0; text-wrap: balance; }
+h1 .gone { color: transparent; -webkit-text-stroke: 1.5px var(--ink); }
+.lede { font-size: 18.5px; color: var(--ink-soft); max-width: 34em; margin: 26px 0 32px; }
+.ctas { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 13px 20px; border-radius: 10px; font: 600 15px/1 var(--body); text-decoration: none; border: 1.5px solid var(--ink); cursor: pointer; background: none; color: var(--ink); }
+.btn.solid { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn:hover { transform: translateY(-1px); }
+.fine { font: 13px/1.5 var(--mono); color: var(--ink-soft); margin-top: 18px; }
+
+/* The live document */
+.doc { background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; padding: 22px 22px 18px; box-shadow: 0 24px 60px -30px rgba(20, 35, 32, .35); display: grid; gap: 14px; }
+.doc-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; font: 12.5px/1 var(--mono); color: var(--ink-soft); }
+.doc-head b { color: var(--ink); font-weight: 500; }
+.doc-body { font-size: 14px; line-height: 1.65; display: grid; gap: 8px; }
+.doc-body h4 { margin: 4px 0 0; font: 600 12px/1.2 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
+.doc-body p { margin: 0; }
+.hl { background: var(--accent-wash); border-radius: 3px; padding: 0 2px; }
+.qa { border-top: 1px dashed var(--rule); padding-top: 14px; display: grid; gap: 10px; font-size: 14px; }
+.q { justify-self: end; background: var(--accent); color: var(--accent-ink); padding: 8px 12px; border-radius: 12px 12px 3px 12px; max-width: 90%; }
+.a { max-width: 95%; }
+.cite { font: 600 10.5px/1 var(--mono); background: var(--accent-wash); color: var(--accent); padding: 2px 5px; border-radius: 4px; vertical-align: 1px; }
+.doc-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid var(--rule); padding-top: 14px; }
+.meter { font: 13px/1.3 var(--mono); color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.meter b { color: var(--ink); font-weight: 500; }
+.wipe { font: 600 13px/1 var(--body); padding: 9px 13px; border-radius: 8px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); cursor: pointer; }
+.wipe:hover { border-color: var(--ink); }
+
+/* Redaction: each text line collapses into a bar, then the bar fades out. */
+.r { transition: color .25s ease, background-color .25s ease, opacity .5s ease .45s; border-radius: 2px; }
+.doc.wiped .r { color: transparent !important; background: var(--redact) !important; -webkit-text-stroke: 0; opacity: 0; }
+.doc.wiped .r * { color: transparent !important; background: transparent !important; }
+.doc.wiped .q { background: transparent; }
+.doc .r:nth-child(2) { transition-delay: .05s, .05s, .5s; }
+.doc .r:nth-child(3) { transition-delay: .1s, .1s, .55s; }
+.doc .r:nth-child(4) { transition-delay: .15s, .15s, .6s; }
+.doc .r:nth-child(5) { transition-delay: .2s, .2s, .65s; }
+.doc .r:nth-child(6) { transition-delay: .25s, .25s, .7s; }
+.after { display: none; text-align: center; padding: 18px 0 8px; }
+.doc.done .after { display: block; }
+.doc.done .doc-body, .doc.done .qa { display: none; }
+.after strong { display: block; font: 800 46px/1 var(--display); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.after span { font: 13px/1.5 var(--mono); color: var(--ink-soft); }
+@media (prefers-reduced-motion: reduce) { .r { transition: none; } .btn:hover { transform: none; } }
+
+/* Sections */
+section { padding-block: 72px; border-top: 1px solid var(--rule); }
+h2 { font: 800 clamp(30px, 4.4vw, 46px)/1.02 var(--display); letter-spacing: -.03em; margin: 0 0 14px; text-wrap: balance; max-width: 18ch; }
+.intro { color: var(--ink-soft); max-width: 38em; margin: 0 0 40px; font-size: 17px; }
+
+/* Lifecycle: a real sequence, so it is numbered. */
+.life { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; list-style: none; margin: 0; padding: 0; counter-reset: s; }
+.life li { padding: 0 22px 0 0; display: grid; gap: 8px; align-content: start; position: relative; min-width: 0; }
+.life li::before { counter-increment: s; content: counter(s, decimal-leading-zero); font: 500 12.5px/1 var(--mono); color: var(--accent); }
+.life li::after { content: ""; position: absolute; top: 6px; left: 34px; right: 14px; border-top: 1px dashed var(--rule); }
+.life li:last-child::after { display: none; }
+.life h3 { font: 600 17px/1.3 var(--body); margin: 6px 0 0; }
+.life p { margin: 0; color: var(--ink-soft); font-size: 15px; }
+.life li:last-child h3 { color: var(--accent); }
+.tmono { font: 13px/1.4 var(--mono); color: var(--ink); background: var(--sheet); border: 1px solid var(--rule); padding: 2px 6px; border-radius: 5px; justify-self: start; }
+
+/* Security spec: label/value rows like a hardening checklist. */
+.spec { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 48px; }
+.spec div { display: grid; grid-template-columns: 150px 1fr; gap: 16px; padding-block: 14px; border-bottom: 1px solid var(--rule); min-width: 0; }
+.spec dt { font: 500 13px/1.5 var(--mono); color: var(--ink-soft); margin: 0; }
+.spec dd { margin: 0; font-size: 15px; }
+
+/* Run modes */
+.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.mode { padding: 26px; border-radius: 14px; border: 1px solid var(--rule); background: var(--sheet); display: grid; gap: 12px; align-content: start; min-width: 0; }
+.mode.rec { border: 1.5px solid var(--accent); }
+.mode .tag { font: 500 12px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+.mode h3 { font: 800 26px/1.05 var(--display); letter-spacing: -.02em; margin: 0; }
+.mode p { margin: 0; color: var(--ink-soft); font-size: 15px; }
+.mode .note { color: var(--warn); font-size: 14px; }
+pre { margin: 0; overflow-x: auto; font: 13px/1.6 var(--mono); background: var(--paper); border: 1px solid var(--rule); border-radius: 9px; padding: 12px 14px; }
+
+/* Business */
+.biz { display: grid; grid-template-columns: 1.2fr 1fr; gap: 56px; align-items: start; }
+.biz > * { min-width: 0; }
+.who { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 28px; padding: 0; list-style: none; }
+.who li { font-size: 14.5px; padding: 7px 13px; border: 1px solid var(--rule); border-radius: 30px; background: var(--sheet); }
+.offer { background: var(--ink); color: var(--paper); border-radius: 16px; padding: 30px; display: grid; gap: 14px; }
+.offer h3 { font: 800 30px/1.05 var(--display); letter-spacing: -.02em; margin: 0; }
+.offer p { margin: 0; opacity: .8; font-size: 15px; }
+.offer ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 15px; }
+.contact { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 6px; }
+.contact code { font: 15px/1 var(--mono); background: rgba(127,127,127,.18); padding: 10px 12px; border-radius: 8px; user-select: all; }
+.contact button { font: 600 14px/1 var(--body); padding: 10px 14px; border-radius: 8px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+.offer a { color: inherit; }
+
+footer { border-top: 1px solid var(--rule); padding-block: 28px 40px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; font: 13px/1.5 var(--mono); color: var(--ink-soft); }
+footer a { color: var(--ink-soft); }
+
+@media (max-width: 860px) {
+  .hero, .biz, .modes { grid-template-columns: 1fr; gap: 36px; }
+  .hero { padding-block: 24px 56px; }
+  .life { grid-template-columns: 1fr 1fr; gap: 32px 0; }
+  .life li:nth-child(2)::after { display: none; }
+  .spec { grid-template-columns: 1fr; }
+  nav .links a.opt { display: none; }
+  section { padding-block: 56px; }
+}
+@media (max-width: 480px) {
+  .life { grid-template-columns: 1fr; }
+  .life li::after { display: none; }
+  .spec div { grid-template-columns: 1fr; gap: 4px; }
+}
+</style>
+
+<div class="wrap">
+  <nav>
+    <a class="mark" href="#top" id="top"><i></i>Paradox</a>
+    <div class="links">
+      <a class="opt" href="#how">How it works</a>
+      <a class="opt" href="#business">For businesses</a>
+      <a class="gh" href="https://github.com/YOUR_GITHUB_USER/paradox" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div>
+      <p class="eyebrow">Self-hosted AI for confidential documents</p>
+      <h1>It reads everything. It keeps <span class="gone">nothing.</span></h1>
+      <p class="lede">Paradox answers questions about your contracts, reports and policies, and cites the exact passage every time. Your files live only in memory. Sign out, and they are gone.</p>
+      <div class="ctas">
+        <a class="btn solid gh" href="https://github.com/YOUR_GITHUB_USER/paradox" target="_blank" rel="noopener">Self-host it free</a>
+        <a class="btn" href="#business">Have it set up for you</a>
+      </div>
+      <p class="fine">Open source · AGPL-3.0 · runs on your own server</p>
+    </div>
+
+    <div class="doc" id="doc" aria-live="polite">
+      <div class="doc-head"><b>security-policy.pdf</b><span>workspace · Compliance</span></div>
+      <div class="doc-body">
+        <h4 class="r">§ 4 Backups</h4>
+        <p class="r">Backups run nightly at <span class="hl">02:00 and are encrypted with AES-256</span> before leaving the office network.</p>
+        <p class="r">Restores are tested every quarter by the IT lead.</p>
+        <h4 class="r">§ 5 Remote access</h4>
+        <p class="r">Inbound SSH from the internet is blocked. Staff connect through the VPN with hardware keys.</p>
+      </div>
+      <div class="qa">
+        <div class="q r">Are our backups encrypted?</div>
+        <div class="a r">Yes. They run every night at 02:00 and are encrypted with AES-256 before they leave the network <span class="cite">§4</span>.</div>
+      </div>
+      <div class="after">
+        <strong id="bytes">0 bytes</strong>
+        <span>kept on disk, in a database, or in a log</span>
+      </div>
+      <div class="doc-foot">
+        <span class="meter" id="meter">In memory: <b>48.2 KB</b> · on disk: <b>0</b></span>
+        <button class="wipe" id="wipe" type="button">Sign out &amp; wipe</button>
+      </div>
+    </div>
+  </header>
+
+  <section id="how">
+    <h2>What happens to your file</h2>
+    <p class="intro">Most document AI tools put your files in a database and keep them. Paradox has no database. A file exists for exactly as long as you are using it.</p>
+    <ol class="life">
+      <li>
+        <h3>You upload it</h3>
+        <p>The file is read straight from the request into memory. It is never saved as a temp file.</p>
+      </li>
+      <li>
+        <h3>It is indexed in RAM</h3>
+        <p>Text is split into passages and turned into search vectors, held in your session only.</p>
+      </li>
+      <li>
+        <h3>You ask questions</h3>
+        <p>Paradox finds the relevant passages and answers with clickable citations.</p>
+      </li>
+      <li>
+        <h3>It is gone</h3>
+        <p>Sign out, go idle, or stop the server and the session is destroyed.</p>
+        <span class="tmono">idle 30 min → wiped</span>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Built like a security tool</h2>
+    <p class="intro">Written by someone from IT security, for people who have to answer to auditors.</p>
+    <dl class="spec">
+      <div><dt>Storage</dt><dd>No database. Nothing written to disk, enforced by a test that fails if it is.</dd></div>
+      <div><dt>Isolation</dt><dd>Every user's workspaces are scoped to their own session.</dd></div>
+      <div><dt>Logins</dt><dd>bcrypt password hashes, rate limiting, fresh session token on every login.</dd></div>
+      <div><dt>Browser</dt><dd>HttpOnly SameSite cookies, CSRF tokens, strict CSP, no caching.</dd></div>
+      <div><dt>Prompt injection</dt><dd>Document text is fenced as data and cannot forge the model's instructions.</dd></div>
+      <div><dt>Container</dt><dd>Read-only filesystem, RAM-only scratch space, all capabilities dropped.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Pick where the AI runs</h2>
+    <p class="intro">Paradox works with a local model or a hosted API. You choose the trade-off.</p>
+    <div class="modes">
+      <div class="mode rec">
+        <span class="tag">Fully private</span>
+        <h3>Local model</h3>
+        <p>Runs on your own hardware with Ollama. Documents and questions never leave your server.</p>
+        <pre>docker compose up -d</pre>
+      </div>
+      <div class="mode">
+        <span class="tag">Fastest</span>
+        <h3>Hosted API</h3>
+        <p>Connect Claude or any OpenAI-compatible model for quicker, stronger answers on modest hardware.</p>
+        <p class="note">Relevant passages and questions are sent to that provider and follow its data policy.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="business">
+    <div class="biz">
+      <div>
+        <h2>For teams bound by secrecy</h2>
+        <p class="intro">If your documents fall under GDPR or professional confidentiality, pasting them into a public chatbot is not an option. Paradox runs inside your own office.</p>
+        <ul class="who">
+          <li>Law firms</li><li>Tax advisors</li><li>Medical practices</li><li>HR teams</li><li>Insurance brokers</li><li>Compliance</li>
+        </ul>
+      </div>
+      <div class="offer">
+        <h3>Founding installs</h3>
+        <p>I am setting Paradox up for the first five businesses at a founding price.</p>
+        <ul>
+          <li>Installed on your server or office PC</li>
+          <li>Local model, so nothing leaves your building</li>
+          <li>Accounts for your team, updates and support</li>
+        </ul>
+        <div class="contact">
+          <code id="handle">@YOUR_HANDLE</code>
+          <button type="button" id="copy">Copy</button>
+        </div>
+        <p>Send a DM on X and tell me what kind of documents you work with.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Paradox · open source under AGPL-3.0</span>
+    <span><a class="gh" href="https://github.com/YOUR_GITHUB_USER/paradox" target="_blank" rel="noopener">Source code</a> · <a href="https://github.com/YOUR_GITHUB_USER/paradox/blob/main/SECURITY.md" class="gh2" target="_blank" rel="noopener">Report a vulnerability</a></span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const doc = document.getElementById("doc");
+  const btn = document.getElementById("wipe");
+  const meter = document.getElementById("meter");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  btn.addEventListener("click", () => {
+    if (doc.classList.contains("done")) {
+      doc.classList.remove("done", "wiped");
+      meter.innerHTML = "In memory: <b>48.2 KB</b> · on disk: <b>0</b>";
+      btn.textContent = "Sign out & wipe";
+      return;
+    }
+    doc.classList.add("wiped");
+    btn.disabled = true;
+    let kb = 48.2;
+    const tick = setInterval(() => {
+      kb = Math.max(0, kb - 4.1);
+      meter.innerHTML = `In memory: <b>${kb.toFixed(1)} KB</b> · on disk: <b>0</b>`;
+      if (kb === 0) clearInterval(tick);
+    }, reduce ? 0 : 60);
+    setTimeout(() => {
+      doc.classList.add("done");
+      meter.innerHTML = "In memory: <b>0 KB</b> · on disk: <b>0</b>";
+      btn.textContent = "Start again";
+      btn.disabled = false;
+    }, reduce ? 0 : 1200);
+  });
+
+  const copy = document.getElementById("copy");
+  copy.addEventListener("click", async () => {
+    const text = document.getElementById("handle").textContent.trim();
+    try {
+      await navigator.clipboard.writeText(text);
+      copy.textContent = "Copied";
+    } catch {
+      const range = document.createRange();
+      range.selectNodeContents(document.getElementById("handle"));
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      copy.textContent = "Selected";
+    }
+    setTimeout(() => (copy.textContent = "Copy"), 1800);
+  });
+})();
+</script>
+</body></html>
