@@ -124,7 +124,8 @@ h2 { font: 800 clamp(30px, 4.4vw, 46px)/1.02 var(--display); letter-spacing: -.0
 .spec dd { margin: 0; font-size: 15px; }
 
 /* Run modes */
-.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.mode a.go { font-weight: 600; color: var(--accent); }
 .mode { padding: 26px; border-radius: 14px; border: 1px solid var(--rule); background: var(--sheet); display: grid; gap: 12px; align-content: start; min-width: 0; }
 .mode.rec { border: 1.5px solid var(--accent); }
 .mode .tag { font: 500 12px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
@@ -182,10 +183,10 @@ footer a { color: var(--ink-soft); }
       <h1>It reads everything. It keeps <span class="gone">nothing.</span></h1>
       <p class="lede">Paradox answers questions about your contracts, reports and policies, and cites the exact passage every time. Your files live only in memory. Sign out, and they are gone.</p>
       <div class="ctas">
-        <a class="btn solid gh" href="https://github.com/najjar961/paradox" target="_blank" rel="noopener">Self-host it free</a>
-        <a class="btn" href="#business">Have it set up for you</a>
+        <a class="btn solid" href="app/">Try it in your browser</a>
+        <a class="btn gh" href="https://github.com/najjar961/paradox" target="_blank" rel="noopener">Self-host it</a>
       </div>
-      <p class="fine">Open source · AGPL-3.0 · runs on your own server</p>
+      <p class="fine">Free · open source · nothing uploaded, nothing stored</p>
     </div>
 
     <div class="doc" id="doc" aria-live="polite">
@@ -251,9 +252,15 @@ footer a { color: var(--ink-soft); }
 
   <section>
     <h2>Pick where the AI runs</h2>
-    <p class="intro">Paradox works with a local model or a hosted API. You choose the trade-off.</p>
+    <p class="intro">Use it straight in your browser, run it on your own server, or connect a hosted model. You choose the trade-off.</p>
     <div class="modes">
       <div class="mode rec">
+        <span class="tag">No install</span>
+        <h3>In your browser</h3>
+        <p>The AI runs on your own graphics card through WebGPU. Your files never leave the page, not even to us. Needs Chrome or Edge and a one-time model download.</p>
+        <a class="go" href="app/">Open Paradox Lite →</a>
+      </div>
+      <div class="mode">
         <span class="tag">Fully private</span>
         <h3>Local model</h3>
         <p>Runs on your own hardware with Ollama. Documents and questions never leave your server.</p>

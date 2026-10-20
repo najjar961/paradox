@@ -273,7 +273,7 @@ function escapeHtml(s) {
 
 // Minimal, safe markdown: everything is escaped first, then a few patterns are re-styled.
 function renderMarkdown(src) {
-  const blocks = escapeHtml(src).split(/```/);
+  const blocks = escapeHtml(src).replace(/\n[ \t]*-{3,}[ \t]*(?=\n|$)/g, "\n\n---\n\n").split(/```/);
   return blocks.map((part, i) => {
     if (i % 2 === 1) {
       const body = part.replace(/^[a-zA-Z0-9_-]*\n/, "");

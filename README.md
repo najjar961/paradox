@@ -28,6 +28,20 @@ Paradox is a self-hosted, multi-user AI assistant for confidential documents. Up
 - Model choice: **Ollama** (fully local), **OpenAI** or any OpenAI-compatible server, or **Anthropic**
 - Light and dark mode, works on mobile
 
+## Paradox Lite: no install, runs in your browser
+
+**[Try it: najjar961.github.io/paradox/app](https://najjar961.github.io/paradox/app/)**
+
+Paradox Lite is a static page in [`docs/app/`](docs/app/) that does everything on the visitor's own device:
+
+- Files are read in the page with pdf.js and mammoth. They exist only in JavaScript memory, never in browser storage.
+- The AI model runs on the visitor's graphics card through [WebLLM](https://github.com/mlc-ai/web-llm) and WebGPU. Users pick Qwen2.5 1.5B, Llama 3.2 3B or Qwen2.5 7B; the public weights download once from Hugging Face and are cached by the browser.
+- Short documents are read whole; long ones are searched by passage (BM25). Answers stream with a Stop button, and can be downloaded as PDF, Word or text, built in the browser.
+- A Content-Security-Policy in the page only allows requests to this site and the model hosts, so documents cannot be sent anywhere else.
+- All libraries are served from this repository ([`docs/app/vendor`](docs/app/vendor/LICENSES.md)), so visitors' browsers never contact a third-party CDN.
+
+It needs a recent Chrome or Edge with WebGPU and a few GB of free graphics memory. To test the interface without a GPU, open `app/#selftest`, which uses a stand-in model.
+
 ## How "no data storing" is enforced
 
 | Layer | What happens |

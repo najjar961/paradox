@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <!-- The browser itself enforces the privacy promise: this page may only talk to its own
+       site and to the hosts that serve the public model files. Your documents cannot be sent anywhere. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com; img-src 'self' data: blob:; style-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Paradox Lite</title>
+  <meta name="description" content="Chat with and edit your documents using an AI that runs entirely in your browser. Nothing is uploaded or stored.">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="side" id="side">
+      <a class="brand" href="../"><span class="dot"></span>Paradox <span class="lite">Lite</span></a>
+
+      <section class="card" id="model-card">
+        <h2>AI model</h2>
+        <div id="gpu-missing" class="warn" hidden>
+          <strong>Your browser can't run the AI.</strong>
+          <span>Paradox Lite needs WebGPU. Use a recent Chrome or Edge on a computer. Firefox and Safari support is still limited.</span>
+        </div>
+        <label for="model-select" class="label">Choose a model</label>
+        <select id="model-select"></select>
+        <p id="model-note" class="muted small"></p>
+        <button id="load-model" class="primary" type="button">Download &amp; start</button>
+        <div id="progress" class="progress" hidden>
+          <div class="bar"><i id="progress-bar"></i></div>
+          <span id="progress-text" class="small muted"></span>
+        </div>
+        <p id="model-ready" class="ok small" hidden></p>
+        <button id="forget-model" class="link small" type="button" hidden>Remove downloaded model from this browser</button>
+      </section>
+
+      <section class="card">
+        <h2>Documents</h2>
+        <label id="drop" class="drop" for="file-input">
+          <input id="file-input" type="file" multiple hidden accept=".pdf,.docx,.txt,.md,.markdown,.csv,.json,.log,.html,.htm">
+          <span>Drop files or <u>browse</u></span>
+          <small class="muted">PDF, Word, text · read on this device</small>
+        </label>
+        <ul id="doc-list" class="docs"></ul>
+      </section>
+
+      <section class="card private">
+        <strong>Nothing leaves this page.</strong>
+        <span>Files are read and answered on your device. Close the tab and everything is gone. The only download is the public AI model.</span>
+        <button id="wipe" class="ghost" type="button">Wipe documents &amp; chat</button>
+      </section>
+    </aside>
+
+    <main class="main">
+      <header class="top">
+        <button id="menu" class="icon only-narrow" type="button" aria-label="Show documents and model">☰</button>
+        <h1>Your private workspace</h1>
+        <span id="status" class="status off">No model loaded</span>
+      </header>
+
+      <div id="messages" class="messages" aria-live="polite">
+        <div class="empty" id="empty">
+          <h3>Ask about a document, or have it edited</h3>
+          <ol>
+            <li>Pick a model and click <b>Download &amp; start</b>. The first time takes a few minutes.</li>
+            <li>Drop in a PDF, Word file or text.</li>
+            <li>Ask a question, or say <i>“rewrite this more formally”</i>, then download the result as PDF or Word.</li>
+          </ol>
+        </div>
+      </div>
+
+      <form id="chat-form" class="composer">
+        <textarea id="chat-input" rows="1" maxlength="8000" placeholder="Load a model to start…" disabled></textarea>
+        <button id="send" type="submit" class="primary" disabled>Send</button>
+      </form>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="vendor/mammoth.browser.min.js"></script>
+  <script src="vendor/jspdf.umd.min.js"></script>
+  <script src="vendor/docx.iife.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
