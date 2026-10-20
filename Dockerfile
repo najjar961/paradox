@@ -6,7 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /srv
 COPY requirements.txt .
-RUN pip install -r requirements.txt && useradd --uid 10001 --no-create-home pdx
+RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install -r requirements.txt && useradd --uid 10001 --no-create-home pdx
 
 COPY app ./app
 COPY scripts ./scripts

@@ -46,6 +46,10 @@ class Settings:
     max_workspaces_per_user: int = field(default_factory=lambda: _int("MAX_WORKSPACES_PER_USER", 10))
     chunk_size: int = field(default_factory=lambda: _int("CHUNK_SIZE", 1000))
     chunk_overlap: int = field(default_factory=lambda: _int("CHUNK_OVERLAP", 150))
+    # Documents up to this many characters in total are sent to the model whole,
+    # so it can summarise and edit them; bigger collections use passage search.
+    full_doc_chars: int = field(default_factory=lambda: _int("FULL_DOC_CHARS", 24000))
+    ollama_num_ctx: int = field(default_factory=lambda: _int("OLLAMA_NUM_CTX", 12288))
     top_k: int = field(default_factory=lambda: _int("TOP_K", 5))
     history_turns: int = field(default_factory=lambda: _int("HISTORY_TURNS", 6))
 

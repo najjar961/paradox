@@ -4,21 +4,23 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import re
 import secrets
 from pathlib import Path
 from urllib.parse import unquote
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .auth import LoginLimiter, UserDirectory
 from .config import Settings, load_settings
+from .export import clean_text, to_docx, to_pdf
 from .ingest import IngestError, chunk_text, extension, extract_text, SUPPORTED
 from .providers import ChatModel, Embedder, ProviderError
-from .rag import build_system_prompt, citations
+from .rag import build_system_prompt, build_user_message, citations, document_citations
 from .store import Chunk, Document, Session, SessionStore, Workspace
 
 COOKIE = "pdx_session"
@@ -49,6 +51,12 @@ class WorkspacePatch(BaseModel):
 
 class ChatIn(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
+
+
+class ExportIn(BaseModel):
+    text: str = Field(min_length=1, max_length=200_000)
+    format: str = Field(pattern="^(pdf|docx|txt)$")
+    filename: str = Field(default="paradox", max_length=120)
 
 
 # ---------------------------------------------------------------- app factory
@@ -249,7 +257,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         doc = Document(id=secrets.token_hex(8), name=name, chars=len(text), chunks=len(pieces))
         chunks = [Chunk(doc.id, name, i, t) for i, t in enumerate(pieces)]
         try:
-            ws.add(doc, chunks, vectors)
+            ws.add(doc, chunks, vectors, text)
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
         return doc.__dict__
@@ -265,8 +273,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/workspaces/{ws_id}/chat")
     async def chat(body: ChatIn, request: Request, ws: Workspace = Depends(workspace)):
         question = body.message.strip()
-        hits = []
-        if ws.chunks:
+        hits: list = []
+        full_docs: list[tuple[str, str]] = []
+        if ws.chunks and ws.total_chars() <= s.full_doc_chars:
+            # Small enough: give the model the whole text, so it can summarise or edit it.
+            full_docs = ws.full_documents()
+            sources = document_citations(full_docs)
+        elif ws.chunks:
             # Include the previous user turn so follow-ups ("and the second one?") still retrieve well.
             prev = next((m["content"] for m in reversed(ws.history) if m["role"] == "user"), "")
             query = f"{prev[:500]}\n{question}" if prev and len(question) < 60 else question
@@ -275,30 +288,62 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except ProviderError as exc:
                 raise HTTPException(502, str(exc)) from exc
             hits = ws.search(qv, s.top_k)
+            sources = citations(hits)
+        else:
+            sources = []
 
-        system = build_system_prompt(ws.system_prompt, hits, f"{s.llm_model} (via {s.llm_provider})")
+        system = build_system_prompt(ws.system_prompt, f"{s.llm_model} (via {s.llm_provider})")
         history = ws.history[-2 * s.history_turns:]
-        messages = [*history, {"role": "user", "content": question}]
+        # History keeps plain questions; only the current turn carries the document text.
+        user_msg = build_user_message(question, hits, bool(ws.chunks), full_docs)
+        messages = [*history, {"role": "user", "content": user_msg}]
         model: ChatModel = request.app.state.chat
 
         async def events():
-            yield json.dumps({"type": "sources", "sources": citations(hits)}) + "\n"
+            yield json.dumps({"type": "sources", "sources": sources}) + "\n"
             answer: list[str] = []
+            finished = failed = False
             try:
                 async for piece in model.stream(system, messages):
                     if await request.is_disconnected():
-                        return
+                        break  # user pressed Stop: leaving the loop closes the model request
                     answer.append(piece)
                     yield json.dumps({"type": "token", "text": piece}) + "\n"
+                else:
+                    finished = True
             except ProviderError as exc:
+                failed = True
                 yield json.dumps({"type": "error", "message": str(exc)}) + "\n"
-                return
-            ws.history.append({"role": "user", "content": question})
-            ws.history.append({"role": "assistant", "content": "".join(answer)})
-            yield json.dumps({"type": "done"}) + "\n"
+            finally:
+                # Keep what was written so far (also when stopped), so follow-ups still make sense.
+                if not failed and answer:
+                    text = "".join(answer) + ("" if finished else "\n\n[stopped]")
+                    ws.history.append({"role": "user", "content": question})
+                    ws.history.append({"role": "assistant", "content": text})
+            if finished:
+                yield json.dumps({"type": "done"}) + "\n"
 
         return StreamingResponse(events(), media_type="application/x-ndjson",
                                  headers={"X-Accel-Buffering": "no"})
+
+    # ------------------------------------------------------------ export
+
+    @app.post("/api/export")
+    async def export(body: ExportIn, sess: Session = Depends(current_session)):
+        """Build a file from an answer in memory and send it back. Nothing is kept."""
+        text = clean_text(body.text)
+        stem = re.sub(r"[^\w\-. ]", "_", body.filename).strip(" ._") or "paradox"
+        if body.format == "pdf":
+            data = await asyncio.to_thread(to_pdf, text, stem)
+            media = "application/pdf"
+        elif body.format == "docx":
+            data = await asyncio.to_thread(to_docx, text)
+            media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        else:
+            data = text.encode("utf-8")
+            media = "text/plain; charset=utf-8"
+        return Response(data, media_type=media, headers={
+            "Content-Disposition": f'attachment; filename="{stem}.{body.format}"'})
 
     return app
 # Run with: uvicorn --factory app.main:create_app

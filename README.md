@@ -23,7 +23,8 @@ Paradox is a self-hosted, multi-user AI assistant for confidential documents. Up
 - Multi-user login (accounts from a read-only `users.yaml` of bcrypt hashes)
 - Several workspaces per user, each with its own documents, chat and custom instructions
 - Upload PDF, DOCX, TXT, Markdown, CSV, JSON, HTML and log files
-- Retrieval-augmented answers, streamed token by token, with clickable `[1]` citations that show the source passage
+- Ask anything about a document, or ask Paradox to edit it ("rewrite this more formally", "fix the typos") and copy or download the result
+- Short documents are read in full; large ones are searched by passage. Answers stream live with clickable `[1]` citations
 - Model choice: **Ollama** (fully local), **OpenAI** or any OpenAI-compatible server, or **Anthropic**
 - Light and dark mode, works on mobile
 

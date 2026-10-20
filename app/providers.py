@@ -1,6 +1,7 @@
 """Embedding and chat providers. Requests are sent directly; nothing is cached."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -117,6 +118,7 @@ class ChatModel:
 
     async def _ollama(self, system, messages):
         body = {"model": self.s.llm_model, "stream": True,
+                "options": {"num_ctx": self.s.ollama_num_ctx},
                 "messages": [{"role": "system", "content": system}, *messages]}
         async for line in self._lines(f"{self.s.ollama_url}/api/chat", body):
             data = json.loads(line)
@@ -159,7 +161,9 @@ class ChatModel:
 
     async def _echo(self, system, messages):
         """Offline stub for tests and UI demos: reports what it was given."""
-        question = messages[-1]["content"] if messages else ""
-        n_sources = system.count("<source id=")
+        last = messages[-1]["content"] if messages else ""
+        n_sources = last.count("<source id=")
+        question = last.rsplit("My request: ", 1)[-1]
         for word in f"[echo] {n_sources} source(s) retrieved. Last message: {question}".split(" "):
+            await asyncio.sleep(0.03)  # stream like a real model, so Stop can be tried
             yield word + " "

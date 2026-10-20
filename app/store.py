@@ -37,16 +37,18 @@ class Workspace:
     name: str
     system_prompt: str = ""
     documents: dict[str, Document] = field(default_factory=dict)
+    texts: dict[str, str] = field(default_factory=dict, repr=False)  # full text per document
     chunks: list[Chunk] = field(default_factory=list)
     vectors: np.ndarray | None = None  # shape (n_chunks, dim), L2-normalised
     history: list[dict] = field(default_factory=list)  # {"role", "content"}
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
-    def add(self, doc: Document, chunks: list[Chunk], vectors: np.ndarray) -> None:
+    def add(self, doc: Document, chunks: list[Chunk], vectors: np.ndarray, text: str = "") -> None:
         with self.lock:
             if self.vectors is not None and self.vectors.shape[1] != vectors.shape[1]:
                 raise ValueError("Embedding dimension changed; create a new workspace.")
             self.documents[doc.id] = doc
+            self.texts[doc.id] = text
             self.chunks.extend(chunks)
             self.vectors = vectors if self.vectors is None else np.vstack([self.vectors, vectors])
 
@@ -55,10 +57,18 @@ class Workspace:
             if doc_id not in self.documents:
                 return False
             del self.documents[doc_id]
+            self.texts.pop(doc_id, None)
             keep = [i for i, c in enumerate(self.chunks) if c.doc_id != doc_id]
             self.chunks = [self.chunks[i] for i in keep]
             self.vectors = self.vectors[keep] if keep and self.vectors is not None else None
             return True
+
+    def total_chars(self) -> int:
+        return sum(len(t) for t in self.texts.values())
+
+    def full_documents(self) -> list[tuple[str, str]]:
+        with self.lock:
+            return [(self.documents[i].name, t) for i, t in self.texts.items() if i in self.documents]
 
     def search(self, query_vec: np.ndarray, k: int) -> list[tuple[Chunk, float]]:
         with self.lock:
@@ -97,6 +107,7 @@ class Session:
             ws.chunks.clear()
             ws.history.clear()
             ws.documents.clear()
+            ws.texts.clear()
             ws.vectors = None
         self.workspaces.clear()
 

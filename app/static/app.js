@@ -5,8 +5,8 @@ const state = { me: null, workspaces: [], current: null, busy: false };
 
 // ------------------------------------------------------------------ api
 
-async function api(path, { method = "GET", body, headers = {}, raw = false } = {}) {
-  const opts = { method, headers: { ...headers }, credentials: "same-origin" };
+async function api(path, { method = "GET", body, headers = {}, raw = false, signal } = {}) {
+  const opts = { method, headers: { ...headers }, credentials: "same-origin", signal };
   if (state.me && method !== "GET") opts.headers["X-CSRF-Token"] = state.me.csrf;
   if (body !== undefined) {
     if (body instanceof Blob) {
@@ -123,7 +123,20 @@ function renderWorkspace() {
   const box = $("#messages");
   box.replaceChildren();
   if (!ws.history.length) box.append(emptyState(false));
-  for (const m of ws.history) box.append(m.role === "user" ? userBubble(m.content) : assistantBubble(m.content));
+  for (const m of ws.history) {
+    if (m.role === "user") { box.append(userBubble(m.content)); continue; }
+    const stoppedMsg = m.content.endsWith("[stopped]");
+    const body = stoppedMsg ? m.content.replace(/\s*\[stopped\]$/, "") : m.content;
+    const b = assistantBubble(body);
+    if (stoppedMsg) {
+      const note = document.createElement("p");
+      note.className = "stopped";
+      note.textContent = "Stopped.";
+      b.querySelector(".text").append(note);
+    }
+    attachActions(b, body, ws.documents[0]?.name);
+    box.append(b);
+  }
   box.scrollTop = box.scrollHeight;
   renderDocs();
 }
@@ -137,8 +150,8 @@ function emptyState(noWorkspace) {
     h.textContent = "Create a workspace to begin";
     p.textContent = "Use the + button in the sidebar.";
   } else {
-    h.textContent = "Upload documents, then ask questions";
-    p.textContent = "Open Documents to add PDFs, Word files or text. Answers cite the passages they came from.";
+    h.textContent = "Upload a document, then ask or edit";
+    p.textContent = "Open Documents to add a PDF, Word file or text. Ask questions, or say \u201crewrite this more formally\u201d and download the result. Nothing is saved.";
   }
   d.append(h, p);
   return d;
@@ -267,6 +280,7 @@ function renderMarkdown(src) {
       return `<pre><code>${body}</code></pre>`;
     }
     return part.split(/\n{2,}/).filter((p) => p.trim()).map((p) => {
+      if (/^\s*-{3,}\s*$/.test(p)) return '<hr class="sep">';
       let h = p
         .replace(/`([^`\n]+)`/g, "<code>$1</code>")
         .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
@@ -295,6 +309,54 @@ function assistantBubble(text, sources = []) {
   return d;
 }
 
+// Copy and download buttons for an answer. Files are built in server memory and streamed back; nothing is kept.
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function attachActions(msgEl, text, docName) {
+  msgEl.querySelector(".actions")?.remove();
+  if (!text.trim()) return;
+  const stem = `${(docName || "paradox").replace(/\.[^.]+$/, "")}_paradox`;
+  const row = document.createElement("div");
+  row.className = "actions";
+
+  const copy = document.createElement("button");
+  copy.textContent = "Copy";
+  copy.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(text); copy.textContent = "Copied"; }
+    catch { copy.textContent = "Copy failed"; }
+    setTimeout(() => (copy.textContent = "Copy"), 1500);
+  });
+  row.append(copy);
+
+  for (const [fmt, label] of [["pdf", "PDF"], ["docx", "Word"], ["txt", "Text"]]) {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.title = `Download as ${label}`;
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      try {
+        const res = await api("/api/export", { method: "POST", body: { text, format: fmt, filename: stem }, raw: true });
+        saveBlob(await res.blob(), `${stem}.${fmt}`);
+      } catch (err) {
+        if (err.message !== "unauthorised") toast(err.message);
+      } finally {
+        b.disabled = false;
+      }
+    });
+    row.append(b);
+  }
+  msgEl.append(row);
+}
+
 function attachSources(msgEl, sources) {
   msgEl._sources = sources;
   msgEl.querySelector(".sources")?.remove();
@@ -305,7 +367,7 @@ function attachSources(msgEl, sources) {
   for (const s of sources) {
     const chip = document.createElement("button");
     chip.className = "source-chip";
-    chip.textContent = `[${s.id}] ${s.document} · part ${s.chunk}`;
+    chip.textContent = s.chunk == null ? `[${s.id}] ${s.document} · full document` : `[${s.id}] ${s.document} · part ${s.chunk}`;
     chip.addEventListener("click", () => showSource(msgEl, s.id));
     row.append(chip);
   }
@@ -320,7 +382,9 @@ function showSource(msgEl, id) {
   if (!box) { box = document.createElement("div"); box.className = "source-detail"; msgEl.append(box); }
   box.dataset.id = String(id);
   const title = document.createElement("b");
-  title.textContent = `[${s.id}] ${s.document}, part ${s.chunk} (relevance ${s.score})\n`;
+  title.textContent = s.chunk == null
+    ? `[${s.id}] ${s.document}, full document (beginning shown)\n`
+    : `[${s.id}] ${s.document}, part ${s.chunk} (relevance ${s.score})\n`;
   box.replaceChildren(title, document.createTextNode(s.excerpt + (s.excerpt.length >= 400 ? "…" : "")));
 }
 
@@ -337,13 +401,31 @@ input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#chat-form").requestSubmit(); }
 });
 
+const sendBtn = $("#send");
+let controller = null;
+
+function setStreaming(on) {
+  state.busy = on;
+  sendBtn.textContent = on ? "Stop" : "Send";
+  sendBtn.classList.toggle("stop", on);
+  sendBtn.type = on ? "button" : "submit";
+  sendBtn.setAttribute("aria-label", on ? "Stop the answer" : "Send");
+}
+
+sendBtn.addEventListener("click", (e) => {
+  if (state.busy && controller) { e.preventDefault(); controller.abort(); }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && state.busy && controller) controller.abort();
+});
+
 $("#chat-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text || state.busy || !state.current) return;
   const ws = state.current;
-  state.busy = true;
-  $("#send").disabled = true;
+  controller = new AbortController();
+  setStreaming(true);
   input.value = "";
   input.style.height = "auto";
 
@@ -358,8 +440,11 @@ $("#chat-form").addEventListener("submit", async (e) => {
 
   let answer = "";
   let sources = [];
+  let stopped = false;
   try {
-    const res = await api(`/api/workspaces/${ws.id}/chat`, { method: "POST", body: { message: text }, raw: true });
+    const res = await api(`/api/workspaces/${ws.id}/chat`, {
+      method: "POST", body: { message: text }, raw: true, signal: controller.signal,
+    });
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
@@ -380,17 +465,29 @@ $("#chat-form").addEventListener("submit", async (e) => {
         if (nearBottom) box.scrollTop = box.scrollHeight;
       }
     }
-    attachSources(reply, sources);
-    ws.history.push({ role: "user", content: text }, { role: "assistant", content: answer });
   } catch (err) {
-    if (err.message !== "unauthorised") {
+    if (err.name === "AbortError") {
+      stopped = true;
+    } else if (err.message !== "unauthorised") {
       reply.classList.add("error");
       textEl.textContent = err.message;
+      answer = "";
     }
   } finally {
     textEl.classList.remove("cursor");
-    state.busy = false;
-    $("#send").disabled = false;
+    if (stopped) {
+      const note = document.createElement("p");
+      note.className = "stopped";
+      note.textContent = answer ? "Stopped." : "Stopped before Paradox started writing.";
+      textEl.append(note);
+    }
+    if (answer) {
+      attachSources(reply, sources);
+      attachActions(reply, answer, sources[0]?.document);
+      ws.history.push({ role: "user", content: text }, { role: "assistant", content: answer + (stopped ? "\n\n[stopped]" : "") });
+    }
+    controller = null;
+    setStreaming(false);
     input.focus();
   }
 });
