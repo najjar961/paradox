@@ -122,6 +122,10 @@ h2 { font: 800 clamp(30px, 4.4vw, 46px)/1.02 var(--display); letter-spacing: -.0
 .spec div { display: grid; grid-template-columns: 150px 1fr; gap: 16px; padding-block: 14px; border-bottom: 1px solid var(--rule); min-width: 0; }
 .spec dt { font: 500 13px/1.5 var(--mono); color: var(--ink-soft); margin: 0; }
 .spec dd { margin: 0; font-size: 15px; }
+.feats dt { font: 600 15px/1.4 var(--body); color: var(--accent); }
+.feats div { grid-template-columns: 110px 1fr; }
+.langbtn { font: 600 12px/1 var(--mono); padding: 7px 9px; border-radius: 8px; border: 1px solid var(--rule); background: var(--sheet); color: var(--ink); cursor: pointer; }
+nav .links { align-items: center; }
 
 /* Run modes */
 .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
@@ -171,40 +175,42 @@ footer a { color: var(--ink-soft); }
   <nav>
     <a class="mark" href="#top" id="top"><i></i>Paradox</a>
     <div class="links">
-      <a class="opt" href="#how">How it works</a>
-      <a class="opt" href="#business">For businesses</a>
+      <a class="opt" href="#features" data-i18n>Features</a>
+      <a class="opt" href="#how" data-i18n>How it works</a>
+      <a href="security.html" data-i18n>Security</a>
       <a class="gh" href="https://github.com/najjar961/paradox" target="_blank" rel="noopener">GitHub</a>
+      <button id="lang" class="langbtn" type="button" aria-label="Sprache: Deutsch">DE</button>
     </div>
   </nav>
 
   <header class="hero">
     <div>
-      <p class="eyebrow">Private AI for confidential documents</p>
-      <h1>It reads everything. It keeps <span class="gone">nothing.</span></h1>
-      <p class="lede">Paradox answers questions about your contracts, reports and policies, and cites the exact passage every time. Your files live only in memory. Sign out, and they are gone.</p>
+      <p class="eyebrow" data-i18n>Private AI for confidential documents</p>
+      <h1 data-i18n-html>It reads everything. It keeps <span class="gone">nothing.</span></h1>
+      <p class="lede" data-i18n>Paradox answers questions about your contracts, reports and policies, and cites the exact passage every time. Your files live only in memory. Sign out, and they are gone.</p>
       <div class="ctas">
-        <a class="btn solid" href="app/">Try it in your browser</a>
-        <a class="btn gh" href="https://github.com/najjar961/paradox" target="_blank" rel="noopener">Self-host it</a>
+        <a class="btn solid" href="app/" data-i18n>Try it in your browser</a>
+        <a class="btn gh" href="https://github.com/najjar961/paradox" target="_blank" rel="noopener" data-i18n>Self-host it</a>
       </div>
-      <p class="fine">Free · open source · nothing uploaded, nothing stored</p>
+      <p class="fine" data-i18n>Free · open source · nothing uploaded, nothing stored · English &amp; Deutsch</p>
     </div>
 
     <div class="doc" id="doc" aria-live="polite">
-      <div class="doc-head"><b>security-policy.pdf</b><span>workspace · Compliance</span></div>
+      <div class="doc-head"><b data-i18n>security-policy.pdf</b><span data-i18n>workspace · Compliance</span></div>
       <div class="doc-body">
-        <h4 class="r">§ 4 Backups</h4>
-        <p class="r">Backups run nightly at <span class="hl">02:00 and are encrypted with AES-256</span> before leaving the office network.</p>
-        <p class="r">Restores are tested every quarter by the IT lead.</p>
-        <h4 class="r">§ 5 Remote access</h4>
-        <p class="r">Inbound SSH from the internet is blocked. Staff connect through the VPN with hardware keys.</p>
+        <h4 class="r" data-i18n>§ 4 Backups</h4>
+        <p class="r" data-i18n-html>Backups run nightly at <span class="hl">02:00 and are encrypted with AES-256</span> before leaving the office network.</p>
+        <p class="r" data-i18n>Restores are tested every quarter by the IT lead.</p>
+        <h4 class="r" data-i18n>§ 5 Remote access</h4>
+        <p class="r" data-i18n>Inbound SSH from the internet is blocked. Staff connect through the VPN with hardware keys.</p>
       </div>
       <div class="qa">
-        <div class="q r">Are our backups encrypted?</div>
-        <div class="a r">Yes. They run every night at 02:00 and are encrypted with AES-256 before they leave the network <span class="cite">§4</span>.</div>
+        <div class="q r" data-i18n>Are our backups encrypted?</div>
+        <div class="a r" data-i18n-html>Yes. They run every night at 02:00 and are encrypted with AES-256 before they leave the network <span class="cite">§4</span>.</div>
       </div>
       <div class="after">
-        <strong id="bytes">0 bytes</strong>
-        <span>kept on disk, in a database, or in a log</span>
+        <strong id="bytes" data-i18n>0 bytes</strong>
+        <span data-i18n>kept on disk, in a database, or in a log</span>
       </div>
       <div class="doc-foot">
         <span class="meter" id="meter">In memory: <b>48.2 KB</b> · on disk: <b>0</b></span>
@@ -213,64 +219,77 @@ footer a { color: var(--ink-soft); }
     </div>
   </header>
 
+  <section id="features">
+    <h2 data-i18n>Everything you do with documents</h2>
+    <p class="intro" data-i18n>Ask, edit, fill in, black out and compare. The AI does the work; you see a preview of the real file before anything is downloaded.</p>
+    <dl class="spec feats">
+      <div><dt data-i18n>Ask</dt><dd data-i18n>Answers cite the exact passage. Long documents are searched by meaning, so the question doesn't have to use the document's words.</dd></div>
+      <div><dt data-i18n>Edit</dt><dd data-i18n>Changes go into your original PDF, Word, Excel or PowerPoint file. Logos, fonts and layout stay exactly as they were.</dd></div>
+      <div><dt data-i18n>Compare</dt><dd data-i18n>Two versions of a contract? See every changed word, and get an explanation of what it means for you.</dd></div>
+      <div><dt data-i18n>Black out</dt><dd data-i18n>Names, addresses, IBANs and ID numbers are found and truly removed from the file, not just covered.</dd></div>
+      <div><dt data-i18n>Fill in</dt><dd data-i18n>PDF forms are filled from what you tell it and your other documents. You check every field.</dd></div>
+      <div><dt data-i18n>Scans</dt><dd data-i18n>Scanned letters and phone photos are read with text recognition in German and English.</dd></div>
+    </dl>
+  </section>
+
   <section id="how">
-    <h2>What happens to your file</h2>
-    <p class="intro">Most document AI tools put your files in a database and keep them. Paradox has no database. A file exists for exactly as long as you are using it.</p>
+    <h2 data-i18n>What happens to your file</h2>
+    <p class="intro" data-i18n>Most document AI tools put your files in a database and keep them. Paradox has no database. A file exists for exactly as long as you are using it.</p>
     <ol class="life">
       <li>
-        <h3>You upload it</h3>
-        <p>The file is read straight from the request into memory. It is never saved as a temp file.</p>
+        <h3 data-i18n>You upload it</h3>
+        <p data-i18n>The file is read straight from the request into memory. It is never saved as a temp file.</p>
       </li>
       <li>
-        <h3>It is indexed in RAM</h3>
-        <p>Text is split into passages and turned into search vectors, held in your session only.</p>
+        <h3 data-i18n>It is indexed in RAM</h3>
+        <p data-i18n>Text is split into passages and turned into search vectors, held in your session only.</p>
       </li>
       <li>
-        <h3>You ask questions</h3>
-        <p>Paradox finds the relevant passages and answers with clickable citations.</p>
+        <h3 data-i18n>You ask questions</h3>
+        <p data-i18n>Paradox finds the relevant passages and answers with clickable citations.</p>
       </li>
       <li>
-        <h3>It is gone</h3>
-        <p>Sign out, go idle, or stop the server and the session is destroyed.</p>
-        <span class="tmono">idle 30 min → wiped</span>
+        <h3 data-i18n>It is gone</h3>
+        <p data-i18n>Sign out, go idle, or stop the server and the session is destroyed.</p>
+        <span class="tmono" data-i18n>idle 30 min → wiped</span>
       </li>
     </ol>
   </section>
 
   <section>
-    <h2>Built like a security tool</h2>
-    <p class="intro">Written by someone from IT security, for people who have to answer to auditors.</p>
+    <h2 data-i18n>Built like a security tool</h2>
+    <p class="intro" data-i18n-html>Written by someone from IT security, for people who have to answer to auditors. <a href="security.html">Check every claim yourself →</a></p>
     <dl class="spec">
-      <div><dt>Storage</dt><dd>No database. Nothing written to disk, enforced by a test that fails if it is.</dd></div>
-      <div><dt>Isolation</dt><dd>Every user's workspaces are scoped to their own session.</dd></div>
-      <div><dt>Logins</dt><dd>bcrypt password hashes, rate limiting, fresh session token on every login.</dd></div>
-      <div><dt>Browser</dt><dd>HttpOnly SameSite cookies, CSRF tokens, strict CSP, no caching.</dd></div>
-      <div><dt>Prompt injection</dt><dd>Document text is fenced as data and cannot forge the model's instructions.</dd></div>
-      <div><dt>Container</dt><dd>Read-only filesystem, RAM-only scratch space, all capabilities dropped.</dd></div>
+      <div><dt data-i18n>Storage</dt><dd data-i18n>No database. Nothing written to disk, enforced by a test that fails if it is.</dd></div>
+      <div><dt data-i18n>Isolation</dt><dd data-i18n>Every user's workspaces are scoped to their own session.</dd></div>
+      <div><dt data-i18n>Logins</dt><dd data-i18n>bcrypt password hashes, rate limiting, fresh session token on every login.</dd></div>
+      <div><dt data-i18n>Browser</dt><dd data-i18n>HttpOnly SameSite cookies, CSRF tokens, strict CSP, no caching.</dd></div>
+      <div><dt data-i18n>Prompt injection</dt><dd data-i18n>Document text is fenced as data and cannot forge the model's instructions.</dd></div>
+      <div><dt data-i18n>Container</dt><dd data-i18n>Read-only filesystem, RAM-only scratch space, all capabilities dropped.</dd></div>
     </dl>
   </section>
 
   <section>
-    <h2>Pick where the AI runs</h2>
-    <p class="intro">Use it straight in your browser, run it on your own server, or connect a hosted model. You choose the trade-off.</p>
+    <h2 data-i18n>Pick where the AI runs</h2>
+    <p class="intro" data-i18n>Use it straight in your browser, run it on your own server, or connect a hosted model. You choose the trade-off.</p>
     <div class="modes">
       <div class="mode rec">
-        <span class="tag">No install</span>
-        <h3>In your browser</h3>
-        <p>The AI runs on your own graphics card through WebGPU. Your files never leave the page, not even to us. Needs Chrome or Edge and a one-time model download.</p>
-        <a class="go" href="app/">Open Paradox Lite →</a>
+        <span class="tag" data-i18n>No install</span>
+        <h3 data-i18n>In your browser</h3>
+        <p data-i18n>The AI runs on your own graphics card through WebGPU. Your files never leave the page, not even to us. Needs Chrome or Edge and a one-time model download.</p>
+        <a class="go" href="app/" data-i18n>Open Paradox Lite →</a>
       </div>
       <div class="mode">
-        <span class="tag">Fully private</span>
-        <h3>Local model</h3>
-        <p>Runs on your own hardware with Ollama. Documents and questions never leave your server.</p>
+        <span class="tag" data-i18n>Fully private</span>
+        <h3 data-i18n>Local model</h3>
+        <p data-i18n>Runs on your own hardware with Ollama. Documents and questions never leave your server.</p>
         <pre>docker compose up -d</pre>
       </div>
       <div class="mode">
-        <span class="tag">Fastest</span>
-        <h3>Hosted API</h3>
-        <p>Connect Claude or any OpenAI-compatible model for quicker, stronger answers on modest hardware.</p>
-        <p class="note">Relevant passages and questions are sent to that provider and follow its data policy.</p>
+        <span class="tag" data-i18n>Fastest</span>
+        <h3 data-i18n>Hosted API</h3>
+        <p data-i18n>Connect Claude or any OpenAI-compatible model for quicker, stronger answers on modest hardware.</p>
+        <p class="note" data-i18n>Relevant passages and questions are sent to that provider and follow its data policy.</p>
       </div>
     </div>
   </section>
@@ -278,62 +297,67 @@ footer a { color: var(--ink-soft); }
   <section id="business">
     <div class="biz">
       <div>
-        <h2>For teams bound by secrecy</h2>
-        <p class="intro">If your documents fall under GDPR or professional confidentiality, pasting them into a public chatbot is not an option. Paradox runs inside your own office.</p>
+        <h2 data-i18n>For teams bound by secrecy</h2>
+        <p class="intro" data-i18n>If your documents fall under GDPR or professional confidentiality, pasting them into a public chatbot is not an option. Paradox runs inside your own office.</p>
         <ul class="who">
-          <li>Law firms</li><li>Tax advisors</li><li>Medical practices</li><li>HR teams</li><li>Insurance brokers</li><li>Compliance</li>
+          <li data-i18n>Law firms</li><li data-i18n>Tax advisors</li><li data-i18n>Medical practices</li><li data-i18n>HR teams</li><li data-i18n>Insurance brokers</li><li data-i18n>Compliance</li>
         </ul>
       </div>
       <div class="offer">
-        <h3>Founding installs</h3>
-        <p>I am setting Paradox up for the first five businesses at a founding price.</p>
+        <h3 data-i18n>Founding installs</h3>
+        <p data-i18n>I am setting Paradox up for the first five businesses at a founding price.</p>
         <ul>
-          <li>Installed on your server or office PC</li>
-          <li>Local model, so nothing leaves your building</li>
-          <li>Accounts for your team, updates and support</li>
+          <li data-i18n>Installed on your server or office PC</li>
+          <li data-i18n>Local model, so nothing leaves your building</li>
+          <li data-i18n>Accounts for your team, updates and support</li>
         </ul>
         <div class="contact">
           <code id="handle">@paradoxexe404</code>
           <button type="button" id="copy">Copy</button>
           <a href="https://x.com/paradoxexe404" target="_blank" rel="noopener">Open on X</a>
         </div>
-        <p>Send a DM on X and tell me what kind of documents you work with.</p>
+        <p data-i18n>Send a DM on X and tell me what kind of documents you work with.</p>
       </div>
     </div>
   </section>
 
   <footer>
-    <span>Paradox · open source under AGPL-3.0</span>
-    <span><a class="gh" href="https://github.com/najjar961/paradox" target="_blank" rel="noopener">Source code</a> · <a href="https://github.com/najjar961/paradox/blob/main/SECURITY.md" class="gh2" target="_blank" rel="noopener">Report a vulnerability</a></span>
+    <span data-i18n>Paradox · open source under AGPL-3.0</span>
+    <span><a class="gh" href="https://github.com/najjar961/paradox" target="_blank" rel="noopener" data-i18n>Source code</a> · <a href="security.html" data-i18n>Security</a> · <a href="https://github.com/najjar961/paradox/blob/main/SECURITY.md" class="gh2" target="_blank" rel="noopener" data-i18n>Report a vulnerability</a></span>
   </footer>
 </div>
 
+<script src="app/i18n.js"></script>
 <script>
 (() => {
+  const t = window.i18n.t;
   const doc = document.getElementById("doc");
   const btn = document.getElementById("wipe");
   const meter = document.getElementById("meter");
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let kb = 48.2;
+  const showMeter = () => {
+    meter.innerHTML = t("In memory: <b>{kb} KB</b> · on disk: <b>0</b>", { kb: kb.toFixed(1).replace(".", window.i18n.lang === "de" ? "," : ".") });
+  };
 
   btn.addEventListener("click", () => {
     if (doc.classList.contains("done")) {
       doc.classList.remove("done", "wiped");
-      meter.innerHTML = "In memory: <b>48.2 KB</b> · on disk: <b>0</b>";
-      btn.textContent = "Sign out & wipe";
+      kb = 48.2; showMeter();
+      btn.textContent = t("Sign out & wipe");
       return;
     }
     doc.classList.add("wiped");
     btn.disabled = true;
-    let kb = 48.2;
     const tick = setInterval(() => {
       kb = Math.max(0, kb - 4.1);
-      meter.innerHTML = `In memory: <b>${kb.toFixed(1)} KB</b> · on disk: <b>0</b>`;
+      showMeter();
       if (kb === 0) clearInterval(tick);
     }, reduce ? 0 : 60);
     setTimeout(() => {
       doc.classList.add("done");
-      meter.innerHTML = "In memory: <b>0 KB</b> · on disk: <b>0</b>";
-      btn.textContent = "Start again";
+      kb = 0; showMeter();
+      btn.textContent = t("Start again");
       btn.disabled = false;
     }, reduce ? 0 : 1200);
   });
@@ -343,15 +367,37 @@ footer a { color: var(--ink-soft); }
     const text = document.getElementById("handle").textContent.trim();
     try {
       await navigator.clipboard.writeText(text);
-      copy.textContent = "Copied";
+      copy.textContent = t("Copied");
     } catch {
       const range = document.createRange();
       range.selectNodeContents(document.getElementById("handle"));
       const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
-      copy.textContent = "Selected";
+      copy.textContent = t("Selected");
     }
-    setTimeout(() => (copy.textContent = "Copy"), 1800);
+    setTimeout(() => (copy.textContent = t("Copy")), 1800);
   });
+
+  // Language: follows the browser, switchable; links into the app and the security page keep it.
+  const langBtn = document.getElementById("lang");
+  function relabel() {
+    const de = window.i18n.lang === "de";
+    window.i18n.apply(document);
+    document.title = de ? "Paradox · Private KI für vertrauliche Dokumente" : "Paradox";
+    btn.textContent = t(doc.classList.contains("done") ? "Start again" : "Sign out & wipe");
+    copy.textContent = t("Copy");
+    showMeter();
+    langBtn.textContent = de ? "EN" : "DE";
+    langBtn.setAttribute("aria-label", de ? "Language: English" : "Sprache: Deutsch");
+    document.querySelectorAll('a[href^="app/"], a[href^="security.html"], a[data-href]').forEach((a) => {
+      if (!a.dataset.href) a.dataset.href = a.getAttribute("href");
+      const u = new URL(a.dataset.href, location.href);
+      u.searchParams.set("lang", window.i18n.lang);
+      a.href = u.href;
+    });
+  }
+  langBtn.addEventListener("click", () => window.i18n.set(window.i18n.lang === "de" ? "en" : "de"));
+  window.i18n.onChange(relabel);
+  relabel();
 })();
 </script>
 </body></html>

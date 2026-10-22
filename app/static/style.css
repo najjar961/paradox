@@ -252,3 +252,7 @@ body.modal-open { overflow: hidden; }
 .cmp-pick .ghost { padding: 7px 10px; white-space: nowrap; }
 .cmp-pick select { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
 .source-chip.wide { max-width: 100%; }
+
+/* ---- language switch */
+.lang { font: 600 12px var(--mono); padding: 6px 9px; letter-spacing: .04em; }
+.lang-login { background: none; border: 0; color: var(--muted); font-size: 13px; text-decoration: underline; cursor: pointer; justify-self: center; padding: 4px; }

@@ -18,6 +18,7 @@ import * as cmp from "./compare.js";
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
 
 const $ = (s) => document.querySelector(s);
+const tr = window.i18n.t;
 const SELFTEST = location.hash === "#selftest"; // offline UI test with a fake model, no download
 
 // ------------------------------------------------------------------ settings
@@ -47,15 +48,22 @@ const state = {
 
 function toast(msg) {
   const t = $("#toast");
-  t.textContent = msg;
+  t.textContent = tr(msg);
   t.hidden = false;
   clearTimeout(toast._t);
   toast._t = setTimeout(() => (t.hidden = true), 4000);
 }
 
+function loadLabel(key) {
+  const b = $("#load-model");
+  b.dataset.en = key;
+  b.textContent = tr(key);
+}
+
 function setStatus(text, kind) {
   const el = $("#status");
-  el.textContent = text;
+  el.dataset.en = text;
+  el.textContent = tr(text);
   el.className = `status ${kind}`;
 }
 
@@ -75,7 +83,7 @@ async function initModelCard() {
   for (const m of MODELS) {
     const o = document.createElement("option");
     o.value = m.key;
-    o.textContent = m.label;
+    o.textContent = tr(m.label);
     sel.append(o);
   }
   sel.value = "balanced";
@@ -105,18 +113,18 @@ async function initModelCard() {
 
 async function updateModelNote() {
   const m = MODELS.find((x) => x.key === $("#model-select").value);
-  $("#model-note").textContent = m.note;
+  $("#model-note").textContent = tr(m.note);
   $("#forget-model").hidden = true;
   if (SELFTEST) return;
   try {
     const webllm = await loadWebllm();
     const cached = await webllm.hasModelInCache(modelIdFor(m));
     if (cached) {
-      $("#model-note").textContent = `${m.note} Already downloaded in this browser.`;
+      $("#model-note").textContent = `${tr(m.note)} ${tr("Already downloaded in this browser.")}`;
       $("#forget-model").hidden = false;
-      if (!state.engine) $("#load-model").textContent = "Start";
+      if (!state.engine) loadLabel("Start");
     } else if (!state.engine) {
-      $("#load-model").textContent = "Download & start";
+      loadLabel("Download & start");
     }
   } catch { /* cache check is optional */ }
 }
@@ -136,17 +144,18 @@ $("#load-model").addEventListener("click", async () => {
     if (state.engine) { await state.engine.unload?.(); state.engine = null; }
     state.engine = SELFTEST ? new FakeEngine() : await createEngine(id);
     state.modelId = id;
-    $("#model-ready").textContent = `${m.label} is ready.`;
+    $("#model-ready").textContent = tr("{model} is ready.", { model: tr(m.label) });
     $("#model-ready").hidden = false;
-    $("#load-model").textContent = "Switch model";
+    loadLabel("Switch model");
     setStatus(m.label.split(" · ")[1], "on");
     enableChat(true);
+    warmOfflineCache(); // the user is committed now: keep every feature available offline
   } catch (err) {
     console.error(err);
     const msg = String(err?.message || err);
     const hint = /memory|OOM|device lost|buffer/i.test(msg)
-      ? "Your graphics card ran out of memory. Try the Fast model."
-      : "Loading failed. Check your connection, or try the Fast model.";
+      ? tr("Your graphics card ran out of memory. Try the Fast model.")
+      : tr("Loading failed. Check your connection, or try the Fast model.");
     toast(hint);
     setStatus("Model failed to load", "off");
   } finally {
@@ -201,7 +210,7 @@ $("#forget-model").addEventListener("click", async () => {
 function enableChat(on) {
   $("#chat-input").disabled = !on;
   $("#send").disabled = !on;
-  $("#chat-input").placeholder = on ? "Ask anything, or ask Paradox to edit your document…" : "Load a model to start…";
+  $("#chat-input").placeholder = on ? tr("Ask anything, or ask Paradox to edit your document…") : tr("Load a model to start…");
   if (on) $("#chat-input").focus();
 }
 
@@ -289,7 +298,7 @@ async function extractText(file) {
     doc.querySelectorAll("script,style").forEach((n) => n.remove());
     return doc.body?.innerText || doc.body?.textContent || "";
   }
-  throw new Error(`.${e || "?"} files are not supported.`);
+  throw new Error(tr(".{ext} files are not supported.", { ext: e || "?" }));
 }
 
 function normalise(text) {
@@ -376,7 +385,7 @@ function meaningWorker() {
       else p.resolve(Array.from({ length: data.vectors.length / data.dim }, (_, i) => data.vectors.subarray(i * data.dim, (i + 1) * data.dim)));
     }
   };
-  w.onerror = (e) => { meaning.ready?.reject(new Error(e.message || "The search model could not start.")); };
+  w.onerror = (e) => { meaning.ready?.reject(new Error(e.message || tr("The search model could not start."))); };
   return (meaning.worker = w);
 }
 
@@ -428,12 +437,12 @@ function renderMeaning() {
   const done = all.filter((c) => c.vec).length;
   const long = state.docs.reduce((s, d) => s + d.text.length, 0) > FULL_DOC_CHARS;
   note.classList.toggle("ok", meaning.status === "ready" && long);
-  if (!$("#meaning").checked) note.textContent = "Off: long documents are searched by keywords only.";
-  else if (meaning.status === "loading") note.textContent = `Downloading the search model… ${Math.round(meaning.progress * 100)}%`;
-  else if (meaning.status === "indexing" && long) note.textContent = `Reading for meaning… ${Math.round((done / (all.length || 1)) * 100)}%`;
-  else if (meaning.status === "failed") note.textContent = "Meaning search couldn't start here, so keyword search is used.";
-  else if (meaning.status === "ready" && long) note.textContent = `✓ Long documents are searched by meaning and keywords.`;
-  else note.textContent = "Finds passages by what they mean, not only by matching words. Used for long documents; downloads a 120 MB model once.";
+  if (!$("#meaning").checked) note.textContent = tr("Off: long documents are searched by keywords only.");
+  else if (meaning.status === "loading") note.textContent = tr("Downloading the search model… {p}%", { p: Math.round(meaning.progress * 100) });
+  else if (meaning.status === "indexing" && long) note.textContent = tr("Reading for meaning… {p}%", { p: Math.round((done / (all.length || 1)) * 100) });
+  else if (meaning.status === "failed") note.textContent = tr("Meaning search couldn't start here, so keyword search is used.");
+  else if (meaning.status === "ready" && long) note.textContent = tr("✓ Long documents are searched by meaning and keywords.");
+  else note.textContent = tr("Finds passages by what they mean, not only by matching words. Used for long documents; downloads a 120 MB model once.");
 }
 
 const RRF_K = 60, POOL = 30;
@@ -478,25 +487,25 @@ function renderDocs(pending = []) {
   const items = state.docs.map((d) => {
     const li = document.createElement("li");
     const name = Object.assign(document.createElement("span"), { className: "name", textContent: d.name, title: d.name });
-    const meta = Object.assign(document.createElement("span"), { className: "meta", textContent: `${Math.max(1, Math.round(d.text.length / 1000))}k chars` });
+    const meta = Object.assign(document.createElement("span"), { className: "meta", textContent: tr("{n}k chars", { n: Math.max(1, Math.round(d.text.length / 1000)) }) });
     const del = Object.assign(document.createElement("button"), { textContent: "✕", title: "Remove" });
     del.setAttribute("aria-label", `Remove ${d.name}`);
     del.addEventListener("click", () => { state.docs = state.docs.filter((x) => x !== d); renderDocs(); renderMeaning(); });
-    if (d.scanned) meta.textContent = "scan · text recognised";
+    if (d.scanned) meta.textContent = tr("scan · text recognised");
     const tools = document.createElement("div");
     tools.className = "doc-tools";
     if (d.form) {
-      const fill = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Fill in form" });
+      const fill = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: tr("Fill in form") });
       fill.addEventListener("click", () => openForm(d));
       tools.append(fill);
     }
     if (d.original) {
-      const redact = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Remove personal data" });
+      const redact = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: tr("Remove personal data") });
       redact.addEventListener("click", () => openRedaction(d));
       tools.append(redact);
     }
     if (state.docs.length > 1) {
-      const c = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Compare" });
+      const c = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: tr("Compare") });
       c.addEventListener("click", () => openCompare(d));
       tools.append(c);
     }
@@ -510,7 +519,7 @@ function renderDocs(pending = []) {
   });
   for (const p of pending) {
     const li = document.createElement("li");
-    li.append(Object.assign(document.createElement("span"), { className: "name pending", textContent: `${p} — reading…` }));
+    li.append(Object.assign(document.createElement("span"), { className: "name pending", textContent: `${p} — ${tr("reading…")}` }));
     items.push(li);
   }
   list.replaceChildren(...items);
@@ -576,11 +585,11 @@ async function pdfInfo(bytes) {
 async function addFiles(files) {
   const pending = files.map((f) => f.name);
   const progress = new Map();
-  const show = () => renderDocs(pending.map((n) => (progress.has(n) ? `${n} — reading text from scan… ${Math.round(progress.get(n) * 100)}%` : n)));
+  const show = () => renderDocs(pending.map((n) => (progress.has(n) ? `${n} — ${tr("reading text from scan… {p}%", { p: Math.round(progress.get(n) * 100) })}` : n)));
   show();
   for (const file of files) {
     try {
-      if (file.size > MAX_FILE_MB * 1024 * 1024) throw new Error(`Larger than ${MAX_FILE_MB} MB.`);
+      if (file.size > MAX_FILE_MB * 1024 * 1024) throw new Error(tr("Larger than {mb} MB.", { mb: MAX_FILE_MB }));
       let kind = ext(file.name), name = file.name, text, scanned = false;
       let original = new Uint8Array(await file.arrayBuffer());
       const onProgress = (x) => { progress.set(file.name, x); show(); };
@@ -599,7 +608,7 @@ async function addFiles(files) {
       else if (kind === "pptx") text = await office.pptxText(window.JSZip, original);
       else text = await extractText(file);
       text = normalise(text || "");
-      if (!text) throw new Error(scanned ? "No text could be recognised in this scan." : "The file contains no text.");
+      if (!text) throw new Error(scanned ? tr("No text could be recognised in this scan.") : tr("The file contains no text."));
       const keep = kind === "pdf" || OFFICE.includes(kind);
       const form = kind === "pdf" && !scanned && listFields(await loadMupdf(), original).length > 0;
       state.docs.push({ id: crypto.randomUUID(), name, text, chunks: chunkText(text), kind,
@@ -757,15 +766,16 @@ function attachSources(msgEl, sources) {
     const chip = document.createElement("button");
     chip.type = "button";
     chip.className = "source-chip";
-    chip.textContent = s.part == null ? `[${s.id}] ${s.document} · full document` : `[${s.id}] ${s.document} · part ${s.part}`;
-    if (s.match) chip.title = MATCH_LABEL[s.match] || "";
+    chip.textContent = s.part == null ? `[${s.id}] ${s.document} · ${tr("full document")}` : `[${s.id}] ${s.document} · ${tr("part {n}", { n: s.part })}`;
+    if (s.match) chip.title = matchLabel(s.match);
     chip.addEventListener("click", () => showSource(msgEl, s.id));
     row.append(chip);
   }
   msgEl.append(row);
 }
 
-const MATCH_LABEL = { meaning: "Found by meaning", keywords: "Found by keywords", both: "Found by meaning and keywords" };
+const MATCH = { meaning: "Found by meaning", keywords: "Found by keywords", both: "Found by meaning and keywords" };
+const matchLabel = (m) => (MATCH[m] ? tr(MATCH[m]) : "");
 
 function showSource(msgEl, id) {
   const s = (msgEl._sources || []).find((x) => String(x.id) === String(id));
@@ -775,7 +785,7 @@ function showSource(msgEl, id) {
   if (!box) { box = document.createElement("div"); box.className = "source-detail"; msgEl.append(box); }
   box.dataset.id = String(id);
   const title = document.createElement("b");
-  title.textContent = s.part == null ? `[${s.id}] ${s.document}, full document (beginning shown)\n` : `[${s.id}] ${s.document}, part ${s.part}${s.match ? " · " + MATCH_LABEL[s.match] : ""}\n`;
+  title.textContent = s.part == null ? `[${s.id}] ${s.document}, ${tr("full document (beginning shown)")}\n` : `[${s.id}] ${s.document}, ${tr("part {n}", { n: s.part })}${s.match ? " · " + matchLabel(s.match) : ""}\n`;
   box.replaceChildren(title, document.createTextNode(s.excerpt + (s.part == null && s.excerpt.length >= 400 ? "…" : "")));
 }
 
@@ -863,10 +873,10 @@ function attachActions(msgEl, answer, docName) {
   const stem = `${(docName || "paradox").replace(/\.[^.]+$/, "")}_paradox`;
   const row = document.createElement("div");
   row.className = "actions";
-  const copy = Object.assign(document.createElement("button"), { type: "button", textContent: "Copy" });
+  const copy = Object.assign(document.createElement("button"), { type: "button", textContent: tr("Copy") });
   copy.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(answer); copy.textContent = "Copied"; } catch { copy.textContent = "Copy failed"; }
-    setTimeout(() => (copy.textContent = "Copy"), 1500);
+    try { await navigator.clipboard.writeText(answer); copy.textContent = tr("Copied"); } catch { copy.textContent = tr("Copy failed"); }
+    setTimeout(() => (copy.textContent = tr("Copy")), 1500);
   });
   row.append(copy);
   const formats = [
@@ -875,11 +885,11 @@ function attachActions(msgEl, answer, docName) {
     ["Text", "txt", async (t) => new Blob([t], { type: "text/plain;charset=utf-8" })],
   ];
   for (const [label, ext, make] of formats) {
-    const b = Object.assign(document.createElement("button"), { type: "button", textContent: label, title: `Download as ${label}` });
+    const b = Object.assign(document.createElement("button"), { type: "button", textContent: label, title: tr("Download as {format}", { format: label }) });
     b.addEventListener("click", async () => {
       b.disabled = true;
       try { saveBlob(await make(cleanText(answer)), `${stem}.${ext}`); }
-      catch (err) { console.error(err); toast(`Could not create the ${label} file.`); }
+      catch (err) { console.error(err); toast(tr("Could not create the {format} file.", { format: label })); }
       finally { b.disabled = false; }
     });
     row.append(b);
@@ -907,7 +917,7 @@ let modalReturn = null;
 function openModal(title, body, actions) {
   const m = $("#modal");
   modalReturn = document.activeElement;
-  $("#modal-title").textContent = title;
+  $("#modal-title").textContent = tr(title);
   $("#modal-body").replaceChildren(...[].concat(body));
   $("#modal-foot").replaceChildren(...[].concat(actions || []));
   m.hidden = false;
@@ -945,7 +955,7 @@ async function pdfPreview(before, after, marks, black) {
   if (!pages.length) pages.push(0);
   const render = (bytes) => renderPages(mupdf, bytes, pages).map((pg) => {
     const url = URL.createObjectURL(new Blob([pg.png], { type: "image/png" }));
-    const img = el("img", { src: url, alt: `Page ${pg.page + 1}` });
+    const img = el("img", { src: url, alt: tr("Page {n}", { n: pg.page + 1 }) });
     img.dataset.url = url;
     const wrap = el("div", { className: "pv-page" }, img);
     for (const m of marks.filter((x) => x.page === pg.page)) {
@@ -955,7 +965,7 @@ async function pdfPreview(before, after, marks, black) {
         width: `${((x1 - x0) / pg.width) * 100}%`, height: `${((y1 - y0) / pg.height) * 100}%` });
       wrap.append(box);
     }
-    wrap.append(el("span", { className: "pv-num", textContent: `Page ${pg.page + 1}` }));
+    wrap.append(el("span", { className: "pv-num", textContent: tr("Page {n}", { n: pg.page + 1 }) }));
     return wrap;
   });
   return { after: render(after), before: render(before) };
@@ -1000,8 +1010,8 @@ function previewView(views, note) {
     tabA.setAttribute("aria-pressed", which === "after");
     tabB.setAttribute("aria-pressed", which === "before");
   };
-  const tabA = el("button", { type: "button", className: "seg", textContent: "After" });
-  const tabB = el("button", { type: "button", className: "seg", textContent: "Before" });
+  const tabA = el("button", { type: "button", className: "seg", textContent: tr("After") });
+  const tabB = el("button", { type: "button", className: "seg", textContent: tr("Before") });
   tabA.addEventListener("click", () => show("after"));
   tabB.addEventListener("click", () => show("before"));
   const bar = el("div", { className: "pv-bar" }, el("div", { className: "segs" }, tabA, tabB), note ? el("span", { className: "muted small", textContent: note }) : null);
@@ -1038,18 +1048,18 @@ async function checkChanges(doc, changes, setStatus) {
   const missing = [];
   changes.forEach((c, i) => {
     const where = locate(doc.text, c.find);
-    if (where) setStatus(i, "ok", where === "exact" ? "Found in your document." : "Found in your document (wording differs slightly).");
+    if (where) setStatus(i, "ok", where === "exact" ? tr("Found in your document.") : tr("Found in your document (wording differs slightly)."));
     else missing.push(i);
   });
   if (!missing.length) return;
   const hints = missing.map((i) => ({ i, near: closestPassage(doc.text, changes[i].find) }));
   const fixable = hints.filter((h) => h.near);
-  for (const h of hints.filter((x) => !x.near)) setStatus(h.i, "fail", "This text isn't in your document.");
+  for (const h of hints.filter((x) => !x.near)) setStatus(h.i, "fail", tr("This text isn't in your document."));
   if (!fixable.length || !state.engine) {
-    for (const h of fixable) setStatus(h.i, "fail", "This text isn't in your document.");
+    for (const h of fixable) setStatus(h.i, "fail", tr("This text isn't in your document."));
     return;
   }
-  fixable.forEach((h) => setStatus(h.i, "busy", "Matching to your document…"));
+  fixable.forEach((h) => setStatus(h.i, "busy", tr("Matching to your document…")));
   const prompt = fixable.map((h, k) => `Change ${k + 1}\nYour FIND: ${changes[h.i].find}\nClosest text in the document: ${h.near.text}\nYour REPLACE: ${changes[h.i].replace}`).join("\n\n");
   let fixed = [];
   try {
@@ -1063,9 +1073,9 @@ async function checkChanges(doc, changes, setStatus) {
     const f = fixed[k];
     if (f && locate(doc.text, f.find)) {
       changes[h.i] = f;
-      setStatus(h.i, "fixed", "Corrected to match your document.", f);
+      setStatus(h.i, "fixed", tr("Corrected to match your document."), f);
     } else {
-      setStatus(h.i, "fail", "This text isn't in your document.");
+      setStatus(h.i, "fail", tr("This text isn't in your document."));
     }
   });
 }
@@ -1076,7 +1086,7 @@ function renderChanges(msgEl, answer) {
   const docs = state.docs.filter((d) => d.editable);
   const textEl = msgEl.querySelector(".text");
   textEl.innerHTML = intro ? renderMarkdown(intro) : "";
-  msgEl.querySelectorAll(".actions button").forEach((b) => { if (b.textContent !== "Copy") b.remove(); });
+  msgEl.querySelectorAll(".actions button").forEach((b) => { if (b.textContent !== tr("Copy")) b.remove(); });
   // The document most of the changes belong to.
   const target = docs.map((d) => ({ d, n: changes.filter((c) => locate(d.text, c.find)).length }))
     .sort((a, b) => b.n - a.n)[0]?.d;
@@ -1084,10 +1094,10 @@ function renderChanges(msgEl, answer) {
   const stamp = Date.now();
   const rows = changes.map((c, i) => {
     const box = el("input", { type: "checkbox", checked: true, id: `chg-${stamp}-${i}` });
-    box.setAttribute("aria-label", `Include change ${i + 1}`);
+    box.setAttribute("aria-label", tr("Include change {n}", { n: i + 1 }));
     const del = el("del", { textContent: c.find });
-    const ins = el("ins", { textContent: c.replace || "(removed)" });
-    const status = el("span", { className: "chg-status", textContent: target ? "Checking…" : "" });
+    const ins = el("ins", { textContent: c.replace || tr("(removed)") });
+    const status = el("span", { className: "chg-status", textContent: target ? tr("Checking…") : "" });
     const li = el("li", {}, box, el("label", { htmlFor: box.id }, del, ins, status));
     return { box, del, ins, status, li };
   });
@@ -1096,16 +1106,16 @@ function renderChanges(msgEl, answer) {
     r.li.className = kind === "fail" ? "fail" : kind === "busy" ? "" : "ok";
     r.status.textContent = text;
     if (kind === "fail") r.box.checked = false;
-    if (fixed) { r.del.textContent = fixed.find; r.ins.textContent = fixed.replace || "(removed)"; }
+    if (fixed) { r.del.textContent = fixed.find; r.ins.textContent = fixed.replace || tr("(removed)"); }
   };
-  const btn = el("button", { type: "button", className: "primary", textContent: target ? `Preview changes to ${target.name}` : "Preview changes", disabled: true });
+  const btn = el("button", { type: "button", className: "primary", textContent: target ? tr("Preview changes to {name}", { name: target.name }) : tr("Preview changes"), disabled: true });
   const btns = el("div", { className: "changes-actions" }, btn);
   if (!target) {
     btn.remove();
-    btns.append(el("small", { className: "muted", textContent: "Upload the original file to apply these changes." }));
+    btns.append(el("small", { className: "muted", textContent: tr("Upload the original file to apply these changes.") }));
   }
   const card = el("div", { className: "changes" },
-    el("div", { className: "changes-head", textContent: `${changes.length} ${changes.length === 1 ? "change" : "changes"} to your original file` }),
+    el("div", { className: "changes-head", textContent: tr("{n} change to your original file|{n} changes to your original file", { n: changes.length }) }),
     el("ol", {}, ...rows.map((r) => r.li)), btns);
   textEl.append(card);
   if (!target) return;
@@ -1117,13 +1127,13 @@ function renderChanges(msgEl, answer) {
     if (!idx.length) { toast("Select at least one change."); return; }
     btn.disabled = true;
     const label = btn.textContent;
-    btn.textContent = "Preparing preview…";
+    btn.textContent = tr("Preparing preview…");
     try {
       const { bytes, report } = await editOriginal(target, idx.map((i) => changes[i]));
       report.forEach((r) => {
         const i = idx[r.index];
-        if (r.ok) setStatus(i, "ok", r.note ? `Ready, ${r.note}.` : "Ready.");
-        else setStatus(i, "fail", `Can't be applied: ${r.reason}.`);
+        if (r.ok) setStatus(i, "ok", r.note ? tr("Ready, {note}.", { note: tr(r.note) }) : tr("Ready."));
+        else setStatus(i, "fail", tr("Can't be applied: {reason}.", { reason: tr(r.reason) }));
       });
       const ok = report.filter((r) => r.ok);
       if (!ok.length) { toast("None of the changes could be applied. See the list for details."); return; }
@@ -1133,15 +1143,15 @@ function renderChanges(msgEl, answer) {
         : target.kind === "docx" ? await docxPreview(target.original, bytes, replaced)
           : await htmlPreview(target.kind, target.original, bytes, replaced);
       const name = target.name.replace(/(\.[^.]+)$/, "_edited$1");
-      const dl = el("button", { type: "button", className: "primary", textContent: `Download ${name}` });
+      const dl = el("button", { type: "button", className: "primary", textContent: tr("Download {name}", { name }) });
       dl.addEventListener("click", () => { saveBlob(new Blob([bytes], { type: MIME[target.kind] }), name); toast("Your edited file is downloading."); });
       const failed = report.length - ok.length;
       openModal("Preview of your edited file",
-        previewView(views, failed ? `${ok.length} of ${report.length} changes applied.` : "Changed text is highlighted."),
-        [el("button", { type: "button", className: "ghost", textContent: "Back", onclick: closeModal }), dl]);
+        previewView(views, failed ? tr("{ok} of {n} changes applied.", { ok: ok.length, n: report.length }) : tr("Changed text is highlighted.")),
+        [el("button", { type: "button", className: "ghost", textContent: tr("Back"), onclick: closeModal }), dl]);
     } catch (err) {
       console.error(err);
-      toast(String(err?.message || "Could not edit this file."));
+      toast(String(err?.message || tr("Could not edit this file.")));
     } finally {
       btn.disabled = false;
       btn.textContent = label;
@@ -1157,10 +1167,10 @@ async function openForm(d) {
   if (!fields.length) { toast("This PDF has no fillable fields."); return; }
   const others = state.docs.filter((x) => x !== d);
   const info = el("textarea", { id: "form-info", rows: 3, maxLength: 8000,
-    placeholder: "Optional: tell Paradox what to fill in, e.g. your name, address, date of birth." });
+    placeholder: tr("Optional: tell Paradox what to fill in, e.g. your name, address, date of birth.") });
   const useDocs = el("input", { type: "checkbox", id: "form-docs", checked: others.length > 0, disabled: !others.length });
-  const suggest = el("button", { type: "button", className: "ghost", textContent: "Fill with AI", disabled: !state.engine,
-    title: state.engine ? "" : "Load a model first" });
+  const suggest = el("button", { type: "button", className: "ghost", textContent: tr("Fill with AI"), disabled: !state.engine,
+    title: state.engine ? "" : tr("Load a model first") });
   const inputs = new Map();
   const list = el("div", { className: "form-fields" }, ...fields.map((f, i) => {
     const id = `ff-${i}`;
@@ -1172,17 +1182,17 @@ async function openForm(d) {
     inputs.set(f.name, { f, input });
     return el("div", { className: `form-row ${f.type === "checkbox" ? "is-check" : ""}` }, el("label", { htmlFor: id, textContent: f.label }), input);
   }));
-  const go = el("button", { type: "button", className: "primary", textContent: "Preview filled form" });
-  openModal(`Fill in ${d.name}`,
+  const go = el("button", { type: "button", className: "primary", textContent: tr("Preview filled form") });
+  openModal(tr("Fill in {name}", { name: d.name }),
     [el("div", { className: "form-ai" }, info, el("div", { className: "form-ai-row" },
       el("label", { className: "switch", htmlFor: "form-docs" }, useDocs,
-        el("span", { textContent: others.length ? `Use my other documents (${others.length})` : "No other documents uploaded" })), suggest)),
-     el("p", { className: "small muted", textContent: `${fields.length} fields. Check every value before you download.` + (state.engine ? "" : " Load a model to let the AI fill them in.") }), list],
-    [el("button", { type: "button", className: "ghost", textContent: "Cancel", onclick: closeModal }), go]);
+        el("span", { textContent: others.length ? tr("Use my other documents ({n})", { n: others.length }) : tr("No other documents uploaded") })), suggest)),
+     el("p", { className: "small muted", textContent: tr("{n} fields. Check every value before you download.", { n: fields.length }) + (state.engine ? "" : tr(" Load a model to let the AI fill them in.")) }), list],
+    [el("button", { type: "button", className: "ghost", textContent: tr("Cancel"), onclick: closeModal }), go]);
 
   suggest.addEventListener("click", async () => {
     suggest.disabled = true;
-    suggest.textContent = "Filling…";
+    suggest.textContent = tr("Filling…");
     try {
       const docsText = useDocs.checked ? others.map((x) => `[${x.name}]\n${x.text.slice(0, 6000)}`).join("\n\n").slice(0, FULL_DOC_CHARS) : "";
       const answer = await askModel([{ role: "system", content: FILL_SYSTEM }, { role: "user", content: fillPrompt(fields, info.value, docsText) }], 800);
@@ -1195,13 +1205,13 @@ async function openForm(d) {
         x.input.closest(".form-row").classList.add("ai-filled");
         n++;
       }
-      toast(n ? `Filled ${n} ${n === 1 ? "field" : "fields"}. Please check them.` : "Paradox found nothing to fill in. Add details above.");
+      toast(n ? tr("Filled {n} field. Please check it.|Filled {n} fields. Please check them.", { n }) : tr("Paradox found nothing to fill in. Add details above."));
     } catch (err) {
       console.error(err);
       toast("Could not fill the form with the AI.");
     } finally {
       suggest.disabled = false;
-      suggest.textContent = "Fill with AI";
+      suggest.textContent = tr("Fill with AI");
     }
   });
 
@@ -1215,10 +1225,10 @@ async function openForm(d) {
       const { bytes, marks } = fillForm(mupdf, d.original, values);
       const views = await pdfPreview(d.original, bytes, marks, false);
       const name = d.name.replace(/(\.[^.]+)$/, "_filled$1");
-      const dl = el("button", { type: "button", className: "primary", textContent: `Download ${name}` });
+      const dl = el("button", { type: "button", className: "primary", textContent: tr("Download {name}", { name }) });
       dl.addEventListener("click", () => { saveBlob(new Blob([bytes], { type: MIME.pdf }), name); toast("Your filled form is downloading."); });
-      openModal(`Preview: ${d.name} filled in`, previewView(views, "Filled fields are highlighted. The fields stay editable."),
-        [el("button", { type: "button", className: "ghost", textContent: "Back", onclick: () => { closeModal(); openForm(d); } }), dl]);
+      openModal(tr("Preview: {name} filled in", { name: d.name }), previewView(views, tr("Filled fields are highlighted. The fields stay editable.")),
+        [el("button", { type: "button", className: "ghost", textContent: tr("Back"), onclick: () => { closeModal(); openForm(d); } }), dl]);
     } catch (err) {
       console.error(err);
       toast("Could not fill in this form.");
@@ -1239,15 +1249,15 @@ async function documentText(d) {
 }
 
 async function openRedaction(d) {
-  const status = el("p", { className: "muted", textContent: "Looking for personal data…" });
+  const status = el("p", { className: "muted", textContent: tr("Looking for personal data…") });
   const groups = el("div", { className: "pii-groups" });
-  const add = el("input", { type: "text", id: "pii-add", placeholder: "Add a word or name to remove", maxLength: 200 });
-  const addBtn = el("button", { type: "button", className: "ghost", textContent: "Add" });
-  const preview = el("button", { type: "button", className: "primary", textContent: "Preview redaction", disabled: true });
-  openModal(`Remove personal data from ${d.name}`,
-    [el("p", { className: "small muted", textContent: "Everything you tick is blacked out and removed from the file itself, not just hidden. The author and other hidden properties are wiped too. Automatic detection can miss things, so check the preview and add anything that is still visible." }),
+  const add = el("input", { type: "text", id: "pii-add", placeholder: tr("Add a word or name to remove"), maxLength: 200 });
+  const addBtn = el("button", { type: "button", className: "ghost", textContent: tr("Add") });
+  const preview = el("button", { type: "button", className: "primary", textContent: tr("Preview redaction"), disabled: true });
+  openModal(tr("Remove personal data from {name}", { name: d.name }),
+    [el("p", { className: "small muted", textContent: tr("Everything you tick is blacked out and removed from the file itself, not just hidden. The author and other hidden properties are wiped too. Automatic detection can miss things, so check the preview and add anything that is still visible.") }),
      status, groups, el("div", { className: "pii-add" }, add, addBtn)],
-    [el("button", { type: "button", className: "ghost", textContent: "Cancel", onclick: closeModal }), preview]);
+    [el("button", { type: "button", className: "ghost", textContent: tr("Cancel"), onclick: closeModal }), preview]);
 
   const items = [];
   const groupEls = new Map();
@@ -1255,7 +1265,7 @@ async function openRedaction(d) {
     if (items.some((x) => x.value === value)) return;
     if (!groupEls.has(type)) {
       const list = el("ul", {});
-      const g = el("fieldset", { className: "pii-group" }, el("legend", { textContent: PII_LABELS[type] || type }), list);
+      const g = el("fieldset", { className: "pii-group" }, el("legend", { textContent: tr(PII_LABELS[type] || type) }), list);
       groupEls.set(type, list);
       groups.append(g);
     }
@@ -1276,26 +1286,26 @@ async function openRedaction(d) {
     for (const f of detectPII(text)) addItem(f.type, f.value);
     if (d.kind === "xlsx") for (const v of await office.xlsxNameCells(window.JSZip, d.original)) addItem("name", v);
     if (state.engine) {
-      status.textContent = "Looking for names and addresses with the AI…";
+      status.textContent = tr("Looking for names and addresses with the AI…");
       try {
         const answer = await askModel(piiPrompt(text.slice(0, FULL_DOC_CHARS)), 500);
         for (const f of parsePiiAnswer(answer, text)) addItem(f.type, f.value);
       } catch (err) { console.error(err); }
     }
     status.textContent = items.length
-      ? `Found ${items.length} ${items.length === 1 ? "item" : "items"}. Untick anything that should stay.`
-      : "No personal data found automatically. Add words to remove below.";
-    if (!state.engine) status.textContent += " Load a model to also find names and addresses.";
+      ? tr("Found {n} item. Untick anything that should stay.|Found {n} items. Untick anything that should stay.", { n: items.length })
+      : tr("No personal data found automatically. Add words to remove below.");
+    if (!state.engine) status.textContent += tr(" Load a model to also find names and addresses.");
   } catch (err) {
     console.error(err);
-    status.textContent = "Could not read this file.";
+    status.textContent = tr("Could not read this file.");
   }
 
   preview.addEventListener("click", async () => {
     const terms = items.filter((x) => x.box.checked).map((x) => x.value);
     if (!terms.length) { toast("Select at least one item."); return; }
     preview.disabled = true;
-    preview.textContent = "Redacting…";
+    preview.textContent = tr("Redacting…");
     try {
       let bytes, views, counts;
       if (d.kind === "pdf") {
@@ -1311,16 +1321,16 @@ async function openRedaction(d) {
       const total = counts.reduce((a, b) => a + b, 0);
       const missed = terms.filter((_, i) => !counts[i]);
       const name = d.name.replace(/(\.[^.]+)$/, "_redacted$1");
-      const dl = el("button", { type: "button", className: "primary", textContent: `Download ${name}` });
+      const dl = el("button", { type: "button", className: "primary", textContent: tr("Download {name}", { name }) });
       dl.addEventListener("click", () => { saveBlob(new Blob([bytes], { type: MIME[d.kind] }), name); toast("Your redacted file is downloading."); });
-      openModal(`Preview: ${d.name} without personal data`,
-        previewView(views, `${total} ${total === 1 ? "place" : "places"} removed.` + (missed.length ? ` Not found in the file: ${missed.join(", ")}.` : "")),
-        [el("button", { type: "button", className: "ghost", textContent: "Back", onclick: () => { closeModal(); openRedaction(d); } }), dl]);
+      openModal(tr("Preview: {name} without personal data", { name: d.name }),
+        previewView(views, tr("{n} place removed.|{n} places removed.", { n: total }) + (missed.length ? " " + tr("Not found in the file: {list}.", { list: missed.join(", ") }) : "")),
+        [el("button", { type: "button", className: "ghost", textContent: tr("Back"), onclick: () => { closeModal(); openRedaction(d); } }), dl]);
     } catch (err) {
       console.error(err);
       toast("Could not redact this file.");
       preview.disabled = false;
-      preview.textContent = "Preview redaction";
+      preview.textContent = tr("Preview redaction");
     }
   });
 }
@@ -1336,10 +1346,10 @@ input.addEventListener("keydown", (e) => {
 
 function setStreaming(on) {
   state.busy = on;
-  sendBtn.textContent = on ? "Stop" : "Send";
+  sendBtn.textContent = on ? tr("Stop") : tr("Send");
   sendBtn.classList.toggle("stop", on);
   sendBtn.type = on ? "button" : "submit";
-  sendBtn.setAttribute("aria-label", on ? "Stop the answer" : "Send");
+  sendBtn.setAttribute("aria-label", on ? tr("Stop the answer") : tr("Send"));
   $("#load-model").disabled = on;
 }
 
@@ -1403,14 +1413,14 @@ async function send(question, pair = null) {
       reply.classList.add("error");
       const msg = String(err?.message || err);
       textEl.textContent = /context|token|length/i.test(msg)
-        ? "The document is too long for this model's memory. Ask about a specific part, or remove other documents."
-        : `Something went wrong: ${msg}`;
+        ? tr("The document is too long for this model's memory. Ask about a specific part, or remove other documents.")
+        : tr("Something went wrong: {msg}", { msg });
     }
   } finally {
     textEl.classList.remove("cursor");
     if (!failed && !answer) textEl.innerHTML = "";
     if (stopRequested) {
-      textEl.append(Object.assign(document.createElement("p"), { className: "stopped", textContent: answer ? "Stopped." : "Stopped before Paradox started writing." }));
+      textEl.append(Object.assign(document.createElement("p"), { className: "stopped", textContent: answer ? tr("Stopped.") : tr("Stopped before Paradox started writing.") }));
     }
     if (!failed && answer) {
       attachSources(reply, turn.sources);
@@ -1427,7 +1437,7 @@ async function send(question, pair = null) {
 // ------------------------------------------------------------------ compare two documents
 
 function attachCompare(msgEl, [a, b]) {
-  const btn = Object.assign(document.createElement("button"), { type: "button", className: "source-chip wide", textContent: `Compared ${a.name} → ${b.name} · show differences` });
+  const btn = Object.assign(document.createElement("button"), { type: "button", className: "source-chip wide", textContent: tr("Compared {a} → {b} · show differences", { a: a.name, b: b.name }) });
   btn.addEventListener("click", () => openCompare(a, b.id));
   const row = Object.assign(document.createElement("div"), { className: "sources" });
   row.append(btn);
@@ -1448,21 +1458,21 @@ function openCompare(d, otherId) {
   const dFirst = docs.indexOf(d) < docs.indexOf(other);
   pickOld.value = dFirst ? d.id : other.id;
   pickNew.value = dFirst ? other.id : d.id;
-  const swap = el("button", { type: "button", className: "ghost", textContent: "⇄ Swap" });
+  const swap = el("button", { type: "button", className: "ghost", textContent: tr("⇄ Swap") });
   const summary = el("p", { className: "cmp-stats" });
   const view = el("div", { className: "cmp-view" });
-  const explain = el("button", { type: "button", className: "primary", textContent: "Explain the changes" });
+  const explain = el("button", { type: "button", className: "primary", textContent: tr("Explain the changes") });
   const hint = el("small", { className: "muted" });
 
   const run = () => {
     const a = docs.find((x) => x.id === pickOld.value), b = docs.find((x) => x.id === pickNew.value);
-    if (a === b) { summary.textContent = "Pick two different documents."; view.replaceChildren(); explain.disabled = true; return; }
+    if (a === b) { summary.textContent = tr("Pick two different documents."); view.replaceChildren(); explain.disabled = true; return; }
     const r = cmp.diff(a.text, b.text), st = r.stats;
-    summary.textContent = st.identical ? "The text of both documents is identical."
-      : `${st.changes} changed passage${st.changes === 1 ? "" : "s"} · ${st.added_words} words added · ${st.removed_words} words removed`;
+    summary.textContent = st.identical ? tr("The text of both documents is identical.")
+      : tr("{n} changed passage|{n} changed passages", { n: st.changes }) + " · " + tr("{n} words added", { n: st.added_words }) + " · " + tr("{n} words removed", { n: st.removed_words });
     view.replaceChildren(...cmp.render(r));
     explain.disabled = !state.engine || state.busy;
-    hint.textContent = state.engine ? "" : "Load an AI model to get the changes explained.";
+    hint.textContent = state.engine ? "" : tr("Load an AI model to get the changes explained.");
   };
   pickOld.addEventListener("change", run);
   pickNew.addEventListener("change", run);
@@ -1470,23 +1480,81 @@ function openCompare(d, otherId) {
   explain.addEventListener("click", () => {
     const a = docs.find((x) => x.id === pickOld.value), b = docs.find((x) => x.id === pickNew.value);
     closeModal();
-    send(`What changed from ${a.name} to ${b.name}, and what does it mean for me?`, [a.id, b.id]);
+    send(tr("What changed from {a} to {b}, and what does it mean for me?", { a: a.name, b: b.name }), [a.id, b.id]);
   });
   openModal("Compare documents", el("div", { className: "cmp" },
     el("div", { className: "cmp-pick" },
-      el("label", {}, el("span", { className: "small muted", textContent: "Older version" }), pickOld), swap,
-      el("label", {}, el("span", { className: "small muted", textContent: "Newer version" }), pickNew)),
+      el("label", {}, el("span", { className: "small muted", textContent: tr("Older version") }), pickOld), swap,
+      el("label", {}, el("span", { className: "small muted", textContent: tr("Newer version") }), pickNew)),
     summary,
-    el("p", { className: "small muted cmp-legend" }, el("del", { textContent: "removed" }), " ", el("ins", { textContent: "added" }), " · compared word by word on this device"),
+    el("p", { className: "small muted cmp-legend" }, el("del", { textContent: tr("removed") }), " ", el("ins", { textContent: tr("added") }), " · " + tr("compared word by word on this device")),
     view), [hint, explain]);
   run();
 }
 
 // ------------------------------------------------------------------ boot
 
+// ------------------------------------------------------------------ install & offline
+
+// The service worker (sw.js) keeps a copy of this app's own files so it opens without
+// internet. It never handles documents; see the comment at the top of sw.js.
+let installPrompt = null;
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch((err) => console.warn("Offline mode unavailable", err));
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data?.type === "warmed" && e.data.complete && !warmToastShown) {
+      warmToastShown = true;
+      toast("Paradox now works offline on this device.");
+    }
+  });
+}
+let warmToastShown = false;
+function warmOfflineCache() {
+  navigator.serviceWorker?.ready.then((reg) => reg.active?.postMessage({ type: "warm" })).catch(() => {});
+}
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  $("#install").hidden = false;
+});
+$("#install").addEventListener("click", async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  await installPrompt.userChoice.catch(() => null);
+  installPrompt = null;
+  $("#install").hidden = true;
+});
+window.addEventListener("appinstalled", () => { $("#install").hidden = true; });
+const showOnline = () => { $("#offline").hidden = navigator.onLine; };
+window.addEventListener("online", showOnline);
+window.addEventListener("offline", showOnline);
+showOnline();
+
+// Switching language re-labels everything on the page without reloading it,
+// because a reload would wipe the documents (they only live in this page's memory).
+function relabel() {
+  window.i18n.apply(document);
+  [...$("#model-select").options].forEach((o) => { const m = MODELS.find((x) => x.key === o.value); o.textContent = tr(m.label); });
+  loadLabel($("#load-model").dataset.en || "Download & start");
+  const ready = state.engine && MODELS.find((x) => modelIdFor(x) === state.modelId);
+  if (ready) $("#model-ready").textContent = tr("{model} is ready.", { model: tr(ready.label) });
+  $("#status").textContent = tr($("#status").dataset.en || "");
+  $("#chat-input").placeholder = tr(state.engine ? "Ask anything, or ask Paradox to edit your document…" : "Load a model to start…");
+  setStreaming(state.busy);
+  if (!state.busy) $("#send").textContent = tr("Send");
+  updateModelNote();
+  renderDocs();
+  renderMeaning();
+  const other = window.i18n.lang === "de" ? "en" : "de";
+  $("#lang").textContent = other.toUpperCase();
+  $("#lang").setAttribute("aria-label", other === "de" ? "Sprache: Deutsch" : "Language: English");
+}
+$("#lang").addEventListener("click", () => window.i18n.set(window.i18n.lang === "de" ? "en" : "de"));
+window.i18n.onChange(relabel);
+
 initModelCard();
-renderDocs();
-renderMeaning();
+loadLabel("Download & start");
+relabel();
 // Warn before closing with work on the page, since nothing can be recovered afterwards.
 window.addEventListener("beforeunload", (e) => {
   if (state.docs.length || state.history.length) { e.preventDefault(); e.returnValue = ""; }

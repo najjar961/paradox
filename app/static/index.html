@@ -12,10 +12,11 @@
   <main id="login-view" class="login" hidden>
     <form id="login-form" class="login-card" autocomplete="on">
       <div class="brand"><span class="dot"></span>Paradox</div>
-      <p class="muted">Chat with your documents. Everything lives in memory and disappears when you leave.</p>
-      <label>Username<input name="username" autocomplete="username" required maxlength="64"></label>
-      <label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="256"></label>
-      <button type="submit" class="primary">Sign in</button>
+      <p class="muted" data-i18n>Chat with your documents. Everything lives in memory and disappears when you leave.</p>
+      <label><span data-i18n>Username</span><input name="username" autocomplete="username" required maxlength="64"></label>
+      <label><span data-i18n>Password</span><input name="password" type="password" autocomplete="current-password" required maxlength="256"></label>
+      <button type="submit" class="primary" data-i18n>Sign in</button>
+      <button type="button" class="link lang-login" id="lang-login">Deutsch</button>
       <p id="login-error" class="error" role="alert"></p>
     </form>
   </main>
@@ -25,30 +26,31 @@
     <aside class="sidebar">
       <div class="brand"><span class="dot"></span>Paradox</div>
       <div class="side-head">
-        <span>Workspaces</span>
-        <button id="new-ws" class="icon" title="New workspace" aria-label="New workspace">+</button>
+        <span data-i18n>Workspaces</span>
+        <button id="new-ws" class="icon" title="New workspace" aria-label="New workspace" data-i18n-attr="title,aria-label">+</button>
       </div>
       <nav id="ws-list" class="ws-list"></nav>
       <div class="side-foot">
         <div class="paradoxl-note">
-          <strong>Nothing is saved.</strong>
+          <strong data-i18n>Nothing is saved.</strong>
           <span id="idle-note"></span>
         </div>
         <div class="user-row">
           <span id="who"></span>
-          <button id="logout" class="ghost">Sign out &amp; wipe</button>
+          <button id="logout" class="ghost" data-i18n>Sign out &amp; wipe</button>
         </div>
       </div>
     </aside>
 
     <section class="main">
       <header class="topbar">
-        <button id="menu" class="icon only-mobile" aria-label="Workspaces">☰</button>
-        <h1 id="ws-title" title="Rename">Workspace</h1>
+        <button id="menu" class="icon only-mobile" aria-label="Workspaces" data-i18n-attr="aria-label">☰</button>
+        <h1 id="ws-title" title="Rename" data-i18n-attr="title">Workspace</h1>
         <div class="top-actions">
           <span id="model-tag" class="tag"></span>
-          <button id="toggle-docs" class="ghost">Documents <span id="doc-count" class="count">0</span></button>
-          <button id="toggle-settings" class="ghost">Settings</button>
+          <button id="toggle-docs" class="ghost"><span data-i18n>Documents</span> <span id="doc-count" class="count">0</span></button>
+          <button id="toggle-settings" class="ghost" data-i18n>Settings</button>
+          <button id="lang" class="ghost lang" type="button">DE</button>
         </div>
       </header>
 
@@ -56,35 +58,35 @@
         <div class="chat-col">
           <div id="messages" class="messages" aria-live="polite"></div>
           <div id="layout-row" class="layout-row" hidden>
-            <label class="switch"><input type="checkbox" id="keep-layout" checked> <span>Keep original layout</span></label>
-            <small class="muted">Changes are applied to your original file.</small>
+            <label class="switch"><input type="checkbox" id="keep-layout" checked> <span data-i18n>Keep original layout</span></label>
+            <small class="muted" data-i18n>Changes are applied to your original file.</small>
           </div>
           <form id="chat-form" class="composer">
-            <textarea id="chat-input" rows="1" maxlength="8000" placeholder="Ask anything, or ask Paradox to edit your document…" required></textarea>
+            <textarea id="chat-input" rows="1" maxlength="8000" placeholder="Ask anything, or ask Paradox to edit your document…" required data-i18n-attr="placeholder"></textarea>
             <button id="send" type="submit" class="primary">Send</button>
           </form>
         </div>
 
         <aside id="docs-panel" class="panel" hidden>
-          <h2>Documents</h2>
+          <h2 data-i18n>Documents</h2>
           <label id="drop" class="drop">
             <input id="file-input" type="file" multiple hidden>
-            <span>Drop files here or <u>browse</u></span>
+            <span data-i18n-html>Drop files here or <u>browse</u></span>
             <small id="supported" class="muted"></small>
           </label>
           <ul id="doc-list" class="doc-list"></ul>
         </aside>
 
         <aside id="settings-panel" class="panel" hidden>
-          <h2>Workspace settings</h2>
-          <label>Name<input id="ws-name" maxlength="80"></label>
-          <label>Instructions for the model
-            <textarea id="ws-prompt" rows="6" maxlength="4000" placeholder="e.g. Answer as a security auditor. Be concise."></textarea>
+          <h2 data-i18n>Workspace settings</h2>
+          <label><span data-i18n>Name</span><input id="ws-name" maxlength="80"></label>
+          <label><span data-i18n>Instructions for the model</span>
+            <textarea id="ws-prompt" rows="6" maxlength="4000" placeholder="e.g. Answer as a security auditor. Be concise." data-i18n-attr="placeholder"></textarea>
           </label>
-          <button id="save-settings" class="primary">Save</button>
+          <button id="save-settings" class="primary" data-i18n>Save</button>
           <hr>
-          <button id="clear-chat" class="ghost">Clear chat history</button>
-          <button id="delete-ws" class="danger">Delete workspace</button>
+          <button id="clear-chat" class="ghost" data-i18n>Clear chat history</button>
+          <button id="delete-ws" class="danger" data-i18n>Delete workspace</button>
         </aside>
       </div>
     </section>
@@ -94,7 +96,7 @@
     <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <header class="modal-head">
         <h2 id="modal-title"></h2>
-        <button id="modal-close" class="icon" type="button" aria-label="Close">✕</button>
+        <button id="modal-close" class="icon" type="button" aria-label="Close" data-i18n-attr="aria-label">✕</button>
       </header>
       <div id="modal-body" class="modal-body"></div>
       <footer id="modal-foot" class="modal-foot"></footer>
@@ -102,6 +104,7 @@
   </div>
 
   <div id="toast" class="toast" role="status" hidden></div>
+  <script src="/static/i18n.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

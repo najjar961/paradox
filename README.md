@@ -33,6 +33,9 @@ Paradox is a self-hosted, multi-user AI assistant for confidential documents. Up
 - **Meaning-based search:** short documents are read in full; long ones are searched by meaning and by keywords at the same time, so "How long can I cancel?" finds "Die Kündigungsfrist beträgt drei Monate". Every citation says whether it was found by meaning, by keywords or both. Answers stream live with clickable `[1]` citations
 - **Compare two documents:** drop in two versions and ask "what changed?", or click **Compare**. Paradox computes every difference exactly, word by word, shows them in place (removed struck through, added highlighted), and the AI explains what the changes mean. It only explains differences that are really there
 - Model choice: **Ollama** (fully local), **OpenAI** or any OpenAI-compatible server, or **Anthropic**
+- **English and German interface:** follows the browser language, with an EN/DE switch that keeps everything on screen. Answers follow the language of your question
+- **Installable and offline (Paradox Lite):** install it like an app; after the first use it opens and works with no internet at all
+- **[Security page](https://najjar961.github.io/paradox/security.html):** what Paradox promises, and step-by-step checks anyone can do in a few minutes to verify it
 - Light and dark mode, works on mobile
 
 ## How search and comparing work
@@ -69,6 +72,8 @@ Paradox Lite is a static page in [`docs/app/`](docs/app/) that does everything o
 - Short documents are read whole; long ones are searched by meaning and keywords. Meaning search uses [multilingual-e5-small](https://huggingface.co/Xenova/multilingual-e5-small) (about 120 MB, 100 languages) through [Transformers.js](https://github.com/huggingface/transformers.js) in a background thread on the visitor's device; it can be switched off, and keyword search (BM25) is used until it's ready. Answers stream with a Stop button, and can be downloaded as PDF, Word or text, built in the browser.
 - A Content-Security-Policy in the page only allows requests to this site and the model hosts, so documents cannot be sent anywhere else.
 - All libraries are served from this repository ([`docs/app/vendor`](docs/app/vendor/LICENSES.md)), so visitors' browsers never contact a third-party CDN.
+
+- Installable as an app (web app manifest). A service worker (`docs/app/sw.js`) keeps a copy of the app's own files so it works offline; once a model is loaded, every feature does. It only ever caches this site's program files, never documents, and ignores requests to other sites.
 
 It needs a recent Chrome or Edge with WebGPU and a few GB of free graphics memory. To test the interface without a GPU, open `app/#selftest`, which uses a stand-in model.
 
@@ -141,6 +146,15 @@ OPENAI_API_KEY=...
 pip install pytest
 python -m pytest -q
 ```
+
+Browser tests drive both apps in a real Chromium with stand-in models (compare, export, stop, German interface, offline mode, the self-hosted login and chat):
+
+```bash
+pip install playwright && python -m playwright install chromium
+python -m pytest tests/browser -q
+```
+
+GitHub Actions runs the unit tests, the browser tests and a Docker build on every push.
 
 They cover login and rate limiting, cookie flags, CSRF, the full upload/retrieve/chat flow, hybrid search, document comparison, DOCX and PDF parsing, upload limits, isolation between users, wipe on logout and idle expiry, the no-disk-writes check, prompt delimiter forging, and chunking.
 

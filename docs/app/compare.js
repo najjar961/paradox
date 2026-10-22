@@ -224,7 +224,8 @@ export function render(result, context = 1) {
     if (!hidden) return;
     const p = document.createElement("p");
     p.className = "cmp-skip";
-    p.textContent = `${hidden} unchanged paragraph${hidden > 1 ? "s" : ""}`;
+    p.textContent = window.i18n ? window.i18n.t("{n} unchanged paragraph|{n} unchanged paragraphs", { n: hidden })
+      : `${hidden} unchanged paragraph${hidden > 1 ? "s" : ""}`;
     out.push(p);
     hidden = 0;
   };

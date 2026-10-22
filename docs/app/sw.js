@@ -1,0 +1,116 @@
+// Paradox Lite service worker: makes the app installable and usable offline.
+//
+// What it stores: only this app's own files (HTML, scripts, fonts, libraries), in the
+// browser's Cache Storage, so the page opens without internet. It never sees or stores
+// your documents or chats: those are never requested over the network at all.
+// It ignores every request to other sites (the AI models cache themselves).
+
+const SHELL_CACHE = "paradox-shell-v1";   // changes with every release (network first)
+const VENDOR_CACHE = "paradox-vendor-v1"; // bump only when a file in vendor/ changes
+
+const SHELL = [
+  "./", "index.html", "app.js", "app.css", "i18n.js", "layout.js", "office.js", "compare.js",
+  "worker.js", "embed-worker.js", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png",
+];
+
+// Everything else the app can load. Cached when first used, or all at once ("warm")
+// after a model has been loaded, so every feature works offline from then on.
+const VENDOR = [
+  "vendor/DejaVuSans.ttf",
+  "vendor/docx.iife.js",
+  "vendor/fonts/Carlito-Bold.ttf",
+  "vendor/fonts/Carlito-Regular.ttf",
+  "vendor/fonts/DejaVuSans-Bold.ttf",
+  "vendor/fonts/DejaVuSans.ttf",
+  "vendor/fonts/LiberationSans-Bold.ttf",
+  "vendor/fonts/LiberationSans-Regular.ttf",
+  "vendor/fonts/LiberationSerif-Bold.ttf",
+  "vendor/fonts/LiberationSerif-Regular.ttf",
+  "vendor/jspdf.umd.min.js",
+  "vendor/jszip.min.js",
+  "vendor/mammoth.browser.min.js",
+  "vendor/mupdf/mupdf-wasm.js",
+  "vendor/mupdf/mupdf-wasm.wasm",
+  "vendor/mupdf/mupdf.js",
+  "vendor/pdf.min.mjs",
+  "vendor/pdf.worker.min.mjs",
+  "vendor/tesseract/core/tesseract-core-lstm.wasm.js",
+  "vendor/tesseract/core/tesseract-core-relaxedsimd-lstm.wasm.js",
+  "vendor/tesseract/core/tesseract-core-simd-lstm.wasm.js",
+  "vendor/tesseract/lang/deu.traineddata.gz",
+  "vendor/tesseract/lang/eng.traineddata.gz",
+  "vendor/tesseract/tesseract.min.js",
+  "vendor/tesseract/worker.min.js",
+  "vendor/transformers/ort-wasm-simd-threaded.asyncify.mjs",
+  "vendor/transformers/ort-wasm-simd-threaded.asyncify.wasm",
+  "vendor/transformers/transformers.min.js",
+  "vendor/web-llm.js",
+];
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil((async () => {
+    for (const name of await caches.keys()) {
+      if (name.startsWith("paradox-") && name !== SHELL_CACHE && name !== VENDOR_CACHE) await caches.delete(name);
+    }
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
+  const url = new URL(req.url);
+  if (req.method !== "GET" || url.origin !== self.location.origin) return;
+  if (!url.pathname.startsWith(new URL("./", self.location).pathname)) return;
+  if (url.pathname.includes("/vendor/")) {
+    event.respondWith(cacheFirst(req));
+  } else {
+    event.respondWith(networkFirst(req));
+  }
+});
+
+async function cacheFirst(req) {
+  const cache = await caches.open(VENDOR_CACHE);
+  const hit = await cache.match(req, { ignoreSearch: true });
+  if (hit) return hit;
+  const res = await fetch(req);
+  if (res.ok) cache.put(req, res.clone());
+  return res;
+}
+
+// Online: always the newest version of the app. Offline: the last one seen.
+async function networkFirst(req) {
+  const cache = await caches.open(SHELL_CACHE);
+  try {
+    const res = await fetch(req);
+    if (res.ok) cache.put(req, res.clone());
+    return res;
+  } catch (err) {
+    const hit = await cache.match(req, { ignoreSearch: true })
+      || (req.mode === "navigate" ? await cache.match("index.html") : null);
+    if (hit) return hit;
+    throw err;
+  }
+}
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== "warm") return;
+  event.waitUntil((async () => {
+    const cache = await caches.open(VENDOR_CACHE);
+    let done = 0;
+    for (const path of VENDOR) {
+      const url = new URL(path, self.location).href;
+      try {
+        if (!(await cache.match(url))) {
+          const res = await fetch(url);
+          if (res.ok) await cache.put(url, res);
+        }
+        done++;
+      } catch { /* offline or interrupted: try again next time */ }
+    }
+    event.source?.postMessage({ type: "warmed", complete: done === VENDOR.length });
+  })());
+});

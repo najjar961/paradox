@@ -1,6 +1,9 @@
 "use strict";
 
 const $ = (sel) => document.querySelector(sel);
+const tr = window.i18n.t;
+// The server names the first workspace "My workspace"; show that default in the page language.
+const wsName = (n) => (n === "My workspace" ? tr(n) : n);
 const state = { me: null, workspaces: [], current: null, busy: false };
 
 // ------------------------------------------------------------------ api
@@ -22,7 +25,7 @@ async function api(path, { method = "GET", body, headers = {}, raw = false, sign
     throw new Error("unauthorised");
   }
   if (!res.ok) {
-    let msg = `Request failed (${res.status})`;
+    let msg = tr("Request failed ({status})", { status: res.status });
     try { const j = await res.json(); if (j.detail) msg = typeof j.detail === "string" ? j.detail : msg; } catch {}
     throw new Error(msg);
   }
@@ -31,7 +34,7 @@ async function api(path, { method = "GET", body, headers = {}, raw = false, sign
 
 function toast(msg) {
   const t = $("#toast");
-  t.textContent = msg;
+  t.textContent = tr(msg);
   t.hidden = false;
   clearTimeout(toast._t);
   toast._t = setTimeout(() => (t.hidden = true), 3500);
@@ -46,7 +49,8 @@ function showLogin(message = "") {
   $("#messages").replaceChildren();
   $("#app-view").hidden = true;
   $("#login-view").hidden = false;
-  $("#login-error").textContent = message;
+  $("#login-error").dataset.en = message;
+  $("#login-error").textContent = tr(message);
   $("#login-form").password.value = "";
 }
 
@@ -55,7 +59,7 @@ async function enterApp(me) {
   $("#login-view").hidden = true;
   $("#app-view").hidden = false;
   $("#who").textContent = me.username;
-  $("#idle-note").textContent = `Data is wiped on sign-out or after ${me.idle_minutes} min idle.`;
+  $("#idle-note").textContent = tr("Data is wiped on sign-out or after {n} min idle.", { n: me.idle_minutes });
   $("#model-tag").textContent = `${me.provider} · ${me.model}`;
   $("#supported").textContent = `${me.supported.join(" ")} · max ${me.max_upload_mb} MB`;
   await loadWorkspaces();
@@ -72,7 +76,7 @@ $("#login-form").addEventListener("submit", async (e) => {
     f.password.value = "";
     await enterApp(me);
   } catch (err) {
-    $("#login-error").textContent = err.message;
+    $("#login-error").textContent = tr(err.message);
   } finally {
     btn.disabled = false;
   }
@@ -97,7 +101,7 @@ function renderSidebar() {
   const list = $("#ws-list");
   list.replaceChildren(...state.workspaces.map((w) => {
     const b = document.createElement("button");
-    b.textContent = w.name;
+    b.textContent = wsName(w.name);
     if (state.current && w.id === state.current.id) b.classList.add("active");
     b.addEventListener("click", () => {
       state.current = w;
@@ -112,12 +116,12 @@ function renderSidebar() {
 function renderWorkspace() {
   const ws = state.current;
   if (!ws) {
-    $("#ws-title").textContent = "No workspace";
+    $("#ws-title").textContent = tr("No workspace");
     $("#messages").replaceChildren(emptyState(true));
     renderDocs();
     return;
   }
-  $("#ws-title").textContent = ws.name;
+  $("#ws-title").textContent = wsName(ws.name);
   $("#ws-name").value = ws.name;
   $("#ws-prompt").value = ws.system_prompt || "";
   const box = $("#messages");
@@ -131,7 +135,7 @@ function renderWorkspace() {
     if (stoppedMsg) {
       const note = document.createElement("p");
       note.className = "stopped";
-      note.textContent = "Stopped.";
+      note.textContent = tr("Stopped.");
       b.querySelector(".text").append(note);
     }
     attachActions(b, body, ws.documents[0]?.name);
@@ -148,18 +152,18 @@ function emptyState(noWorkspace) {
   const h = document.createElement("h3");
   const p = document.createElement("p");
   if (noWorkspace) {
-    h.textContent = "Create a workspace to begin";
-    p.textContent = "Use the + button in the sidebar.";
+    h.textContent = tr("Create a workspace to begin");
+    p.textContent = tr("Use the + button in the sidebar.");
   } else {
-    h.textContent = "Upload a document, then ask or edit";
-    p.textContent = "Open Documents to add a PDF, Word file or text. Ask questions, or say \u201crewrite this more formally\u201d and download the result. Nothing is saved.";
+    h.textContent = tr("Upload a document, then ask or edit");
+    p.textContent = tr("Open Documents to add a PDF, Word file or text. Ask questions, or say “rewrite this more formally” and download the result. Nothing is saved.");
   }
   d.append(h, p);
   return d;
 }
 
 $("#new-ws").addEventListener("click", async () => {
-  const name = prompt("Workspace name", "New workspace");
+  const name = prompt(tr("Workspace name"), tr("New workspace"));
   if (!name || !name.trim()) return;
   try {
     const ws = await api("/api/workspaces", { method: "POST", body: { name: name.trim() } });
@@ -187,7 +191,7 @@ $("#clear-chat").addEventListener("click", async () => {
 });
 
 $("#delete-ws").addEventListener("click", async () => {
-  if (!state.current || !confirm(`Delete "${state.current.name}" and everything in it?`)) return;
+  if (!state.current || !confirm(tr("Delete \"{name}\" and everything in it?", { name: state.current.name }))) return;
   await api(`/api/workspaces/${state.current.id}`, { method: "DELETE" });
   state.current = null;
   openPanel(null);
@@ -223,7 +227,7 @@ function renderDocs(pending = []) {
     name.title = d.name;
     const meta = document.createElement("span");
     meta.className = "meta";
-    meta.textContent = `${d.chunks} ${d.chunks === 1 ? "chunk" : "chunks"}`;
+    meta.textContent = tr("{n} chunk|{n} chunks", { n: d.chunks });
     const del = document.createElement("button");
     del.textContent = "✕";
     del.title = "Remove";
@@ -237,19 +241,19 @@ function renderDocs(pending = []) {
     row.append(name, meta, del);
     const tools = document.createElement("div");
     tools.className = "doc-tools";
-    if (d.scanned) meta.textContent = "scan · text recognised";
+    if (d.scanned) meta.textContent = tr("scan · text recognised");
     if (d.form) {
-      const fill = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Fill in form" });
+      const fill = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: tr("Fill in form") });
       fill.addEventListener("click", () => openForm(d));
       tools.append(fill);
     }
     if (d.kind) {
-      const redact = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Remove personal data" });
+      const redact = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: tr("Remove personal data") });
       redact.addEventListener("click", () => openRedaction(d));
       tools.append(redact);
     }
     if (docs.length > 1) {
-      const cmp = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Compare" });
+      const cmp = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: tr("Compare") });
       cmp.addEventListener("click", () => openCompare(d));
       tools.append(cmp);
     }
@@ -262,7 +266,7 @@ function renderDocs(pending = []) {
     const li = document.createElement("li");
     const name = document.createElement("span");
     name.className = "name pending";
-    name.textContent = `${p} — processing…`;
+    name.textContent = `${p} — ${tr("processing…")}`;
     li.append(name);
     items.push(li);
   }
@@ -280,7 +284,7 @@ async function uploadFiles(files) {
         method: "POST", body: file, headers: { "X-Filename": encodeURIComponent(file.name), "Content-Type": "application/octet-stream" },
       });
     } catch (err) {
-      toast(`${file.name}: ${err.message}`);
+      toast(`${file.name}: ${tr(err.message)}`);
     }
     pending.shift();
     if (state.current?.id === wsId) renderDocs(pending);
@@ -358,18 +362,18 @@ function attachActions(msgEl, text, docName) {
   row.className = "actions";
 
   const copy = document.createElement("button");
-  copy.textContent = "Copy";
+  copy.textContent = tr("Copy");
   copy.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(text); copy.textContent = "Copied"; }
-    catch { copy.textContent = "Copy failed"; }
-    setTimeout(() => (copy.textContent = "Copy"), 1500);
+    try { await navigator.clipboard.writeText(text); copy.textContent = tr("Copied"); }
+    catch { copy.textContent = tr("Copy failed"); }
+    setTimeout(() => (copy.textContent = tr("Copy")), 1500);
   });
   row.append(copy);
 
   for (const [fmt, label] of [["pdf", "PDF"], ["docx", "Word"], ["txt", "Text"]]) {
     const b = document.createElement("button");
     b.textContent = label;
-    b.title = `Download as ${label}`;
+    b.title = tr("Download as {format}", { format: label });
     b.addEventListener("click", async () => {
       b.disabled = true;
       try {
@@ -418,7 +422,7 @@ function el(tag, props = {}, ...children) {
 }
 function openModal(title, body, actions) {
   modalReturn = document.activeElement;
-  $("#modal-title").textContent = title;
+  $("#modal-title").textContent = tr(title);
   $("#modal-body").replaceChildren(...[].concat(body));
   $("#modal-foot").replaceChildren(...[].concat(actions || []));
   $("#modal").hidden = false;
@@ -471,7 +475,7 @@ function markText(root, needles, cls) {
 function previewViews(pv, highlight, black) {
   if (pv.kind === "pdf") {
     const render = (pages) => pages.map((pg) => {
-      const img = el("img", { src: `data:image/png;base64,${pg.png}`, alt: `Page ${pg.page + 1}` });
+      const img = el("img", { src: `data:image/png;base64,${pg.png}`, alt: tr("Page {n}", { n: pg.page + 1 }) });
       const wrap = el("div", { className: "pv-page" }, img);
       for (const m of pv.marks.filter((x) => x.page === pg.page)) {
         const [x0, y0, x1, y1] = m.rect;
@@ -480,7 +484,7 @@ function previewViews(pv, highlight, black) {
           width: `${((x1 - x0) / pg.width) * 100}%`, height: `${((y1 - y0) / pg.height) * 100}%` });
         wrap.append(box);
       }
-      wrap.append(el("span", { className: "pv-num", textContent: `Page ${pg.page + 1}` }));
+      wrap.append(el("span", { className: "pv-num", textContent: tr("Page {n}", { n: pg.page + 1 }) }));
       return wrap;
     });
     return { after: render(pv.after), before: render(pv.before) };
@@ -497,8 +501,8 @@ function previewViews(pv, highlight, black) {
 
 function previewView(views, note) {
   const stage = el("div", { className: "pv-stage" });
-  const tabA = el("button", { type: "button", className: "seg", textContent: "After" });
-  const tabB = el("button", { type: "button", className: "seg", textContent: "Before" });
+  const tabA = el("button", { type: "button", className: "seg", textContent: tr("After") });
+  const tabB = el("button", { type: "button", className: "seg", textContent: tr("Before") });
   const show = (which) => {
     stage.replaceChildren(...views[which]);
     tabA.setAttribute("aria-pressed", which === "after");
@@ -512,7 +516,7 @@ function previewView(views, note) {
 }
 
 function downloadButton(result, kind) {
-  const b = el("button", { type: "button", className: "primary", textContent: `Download ${result.filename}` });
+  const b = el("button", { type: "button", className: "primary", textContent: tr("Download {name}", { name: result.filename }) });
   b.addEventListener("click", () => {
     saveBlob(new Blob([b64ToBytes(result.file)], { type: MIME[kind] }), result.filename);
     toast("Your file is downloading.");
@@ -529,22 +533,22 @@ function renderChanges(msgEl, answer, checked) {
   const target = editableDocs().find((d) => d.id === checked?.doc_id) || editableDocs()[0];
   const textEl = msgEl.querySelector(".text");
   textEl.innerHTML = intro ? renderMarkdown(intro) : "";
-  msgEl.querySelectorAll(".actions button").forEach((b) => { if (b.textContent !== "Copy") b.remove(); });
+  msgEl.querySelectorAll(".actions button").forEach((b) => { if (b.textContent !== tr("Copy")) b.remove(); });
 
   const stamp = Date.now();
   const rows = changes.map((c, i) => {
     const box = el("input", { type: "checkbox", checked: c.status !== "fail", id: `chg-${stamp}-${i}` });
-    box.setAttribute("aria-label", `Include change ${i + 1}`);
-    const status = el("span", { className: "chg-status", textContent: c.message || "" });
+    box.setAttribute("aria-label", tr("Include change {n}", { n: i + 1 }));
+    const status = el("span", { className: "chg-status", textContent: tr(c.message || "") });
     const li = el("li", { className: c.status === "fail" ? "fail" : c.status ? "ok" : "" }, box,
-      el("label", { htmlFor: box.id }, el("del", { textContent: c.find }), el("ins", { textContent: c.replace || "(removed)" }), status));
+      el("label", { htmlFor: box.id }, el("del", { textContent: c.find }), el("ins", { textContent: c.replace || tr("(removed)") }), status));
     return { box, status, li };
   });
-  const btn = el("button", { type: "button", className: "primary", textContent: target ? `Preview changes to ${target.name}` : "Preview changes" });
+  const btn = el("button", { type: "button", className: "primary", textContent: target ? tr("Preview changes to {name}", { name: target.name }) : tr("Preview changes") });
   const actions = el("div", { className: "changes-actions" }, target ? btn
-    : el("small", { className: "muted", textContent: "Upload the original file to apply these changes." }));
+    : el("small", { className: "muted", textContent: tr("Upload the original file to apply these changes.") }));
   textEl.append(el("div", { className: "changes" },
-    el("div", { className: "changes-head", textContent: `${changes.length} ${changes.length === 1 ? "change" : "changes"} to your original file` }),
+    el("div", { className: "changes-head", textContent: tr("{n} change to your original file|{n} changes to your original file", { n: changes.length }) }),
     el("ol", {}, ...rows.map((r) => r.li)), actions));
   if (!target) return;
 
@@ -553,21 +557,21 @@ function renderChanges(msgEl, answer, checked) {
     if (!idx.length) { toast("Select at least one change."); return; }
     btn.disabled = true;
     const label = btn.textContent;
-    btn.textContent = "Preparing preview…";
+    btn.textContent = tr("Preparing preview…");
     try {
       const res = await api(`/api/workspaces/${state.current.id}/documents/${target.id}/preview`, {
         method: "POST", body: { changes: idx.map((i) => ({ find: changes[i].find, replace: changes[i].replace })) } });
       res.report.forEach((r) => {
         const row = rows[idx[r.index]];
         row.li.className = r.ok ? "ok" : "fail";
-        row.status.textContent = r.ok ? (r.note ? `Ready, ${r.note}.` : "Ready.") : `Can't be applied: ${r.reason}.`;
+        row.status.textContent = r.ok ? (r.note ? tr("Ready, {note}.", { note: tr(r.note) }) : tr("Ready.")) : tr("Can't be applied: {reason}.", { reason: tr(r.reason) });
       });
       const ok = res.report.filter((r) => r.ok).length;
       if (!ok) { toast("None of the changes could be applied. See the list for details."); return; }
       openModal("Preview of your edited file",
         previewView(previewViews(res.preview, res.highlight, false),
-          ok < res.report.length ? `${ok} of ${res.report.length} changes applied.` : "Changed text is highlighted."),
-        [el("button", { type: "button", className: "ghost", textContent: "Back", onclick: closeModal }), downloadButton(res, target.kind)]);
+          ok < res.report.length ? tr("{ok} of {n} changes applied.", { ok, n: res.report.length }) : tr("Changed text is highlighted.")),
+        [el("button", { type: "button", className: "ghost", textContent: tr("Back"), onclick: closeModal }), downloadButton(res, target.kind)]);
     } catch (err) {
       if (err.message !== "unauthorised") toast(err.message);
     } finally {
@@ -586,9 +590,9 @@ async function openForm(d) {
   } catch (err) { if (err.message !== "unauthorised") toast(err.message); return; }
   const others = (state.current.documents || []).filter((x) => x.id !== d.id);
   const info = el("textarea", { id: "form-info", rows: 3, maxLength: 8000,
-    placeholder: "Optional: tell Paradox what to fill in, e.g. your name, address, date of birth." });
+    placeholder: tr("Optional: tell Paradox what to fill in, e.g. your name, address, date of birth.") });
   const useDocs = el("input", { type: "checkbox", id: "form-docs", checked: others.length > 0, disabled: !others.length });
-  const suggest = el("button", { type: "button", className: "ghost", textContent: "Fill with AI" });
+  const suggest = el("button", { type: "button", className: "ghost", textContent: tr("Fill with AI") });
   const inputs = new Map();
   const list = el("div", { className: "form-fields" }, ...fields.map((f, i) => {
     const id = `ff-${i}`;
@@ -602,19 +606,19 @@ async function openForm(d) {
     return el("div", { className: `form-row ${f.type === "checkbox" ? "is-check" : ""}` },
       el("label", { htmlFor: id, textContent: f.label }), input);
   }));
-  const go = el("button", { type: "button", className: "primary", textContent: "Preview filled form" });
-  openModal(`Fill in ${d.name}`,
+  const go = el("button", { type: "button", className: "primary", textContent: tr("Preview filled form") });
+  openModal(tr("Fill in {name}", { name: d.name }),
     [el("div", { className: "form-ai" }, info,
       el("div", { className: "form-ai-row" },
         el("label", { className: "switch", htmlFor: "form-docs" }, useDocs,
-          el("span", { textContent: others.length ? `Use my other documents (${others.length})` : "No other documents uploaded" })),
+          el("span", { textContent: others.length ? tr("Use my other documents ({n})", { n: others.length }) : tr("No other documents uploaded") })),
         suggest)),
-     el("p", { className: "small muted", textContent: `${fields.length} fields. Check every value before you download.` }), list],
-    [el("button", { type: "button", className: "ghost", textContent: "Cancel", onclick: closeModal }), go]);
+     el("p", { className: "small muted", textContent: tr("{n} fields. Check every value before you download.", { n: fields.length }) }), list],
+    [el("button", { type: "button", className: "ghost", textContent: tr("Cancel"), onclick: closeModal }), go]);
 
   suggest.addEventListener("click", async () => {
     suggest.disabled = true;
-    suggest.textContent = "Filling…";
+    suggest.textContent = tr("Filling…");
     try {
       const res = await api(`/api/workspaces/${state.current.id}/documents/${d.id}/form/suggest`,
         { method: "POST", body: { info: info.value, use_documents: useDocs.checked } });
@@ -626,12 +630,12 @@ async function openForm(d) {
         x.input.closest(".form-row").classList.add("ai-filled");
         n++;
       }
-      toast(n ? `Filled ${n} ${n === 1 ? "field" : "fields"}. Please check them.` : "Paradox found nothing to fill in. Add details above.");
+      toast(n ? tr("Filled {n} field. Please check it.|Filled {n} fields. Please check them.", { n }) : tr("Paradox found nothing to fill in. Add details above."));
     } catch (err) {
       if (err.message !== "unauthorised") toast(err.message);
     } finally {
       suggest.disabled = false;
-      suggest.textContent = "Fill with AI";
+      suggest.textContent = tr("Fill with AI");
     }
   });
 
@@ -642,16 +646,16 @@ async function openForm(d) {
       else if (input.value !== "") values[name] = input.value;
     }
     go.disabled = true;
-    go.textContent = "Filling in…";
+    go.textContent = tr("Filling in…");
     try {
       const res = await api(`/api/workspaces/${state.current.id}/documents/${d.id}/form/fill`, { method: "POST", body: { values } });
-      openModal(`Preview: ${d.name} filled in`, previewView(previewViews(res.preview, [], false), "Filled fields are highlighted. The fields stay editable."),
-        [el("button", { type: "button", className: "ghost", textContent: "Back", onclick: () => { closeModal(); openForm(d); } }),
+      openModal(tr("Preview: {name} filled in", { name: d.name }), previewView(previewViews(res.preview, [], false), "Filled fields are highlighted. The fields stay editable."),
+        [el("button", { type: "button", className: "ghost", textContent: tr("Back"), onclick: () => { closeModal(); openForm(d); } }),
          downloadButton(res, "pdf")]);
     } catch (err) {
       if (err.message !== "unauthorised") toast(err.message);
       go.disabled = false;
-      go.textContent = "Preview filled form";
+      go.textContent = tr("Preview filled form");
     }
   });
 }
@@ -662,15 +666,15 @@ const PII_LABELS = { name: "Names", address: "Addresses", email: "Email addresse
   iban: "Bank accounts (IBAN)", card: "Card numbers", birthdate: "Dates of birth", id: "ID and tax numbers", custom: "Your own words" };
 
 async function openRedaction(d) {
-  const status = el("p", { className: "muted", textContent: "Looking for personal data…" });
+  const status = el("p", { className: "muted", textContent: tr("Looking for personal data…") });
   const groups = el("div", { className: "pii-groups" });
-  const add = el("input", { type: "text", id: "pii-add", placeholder: "Add a word or name to remove", maxLength: 200 });
-  const addBtn = el("button", { type: "button", className: "ghost", textContent: "Add" });
-  const go = el("button", { type: "button", className: "primary", textContent: "Preview redaction", disabled: true });
-  openModal(`Remove personal data from ${d.name}`,
-    [el("p", { className: "small muted", textContent: "Everything you tick is blacked out and removed from the file itself, not just hidden. The author and other hidden properties are wiped too. Automatic detection can miss things, so check the preview and add anything that is still visible." }),
+  const add = el("input", { type: "text", id: "pii-add", placeholder: tr("Add a word or name to remove"), maxLength: 200 });
+  const addBtn = el("button", { type: "button", className: "ghost", textContent: tr("Add") });
+  const go = el("button", { type: "button", className: "primary", textContent: tr("Preview redaction"), disabled: true });
+  openModal(tr("Remove personal data from {name}", { name: d.name }),
+    [el("p", { className: "small muted", textContent: tr("Everything you tick is blacked out and removed from the file itself, not just hidden. The author and other hidden properties are wiped too. Automatic detection can miss things, so check the preview and add anything that is still visible.") }),
      status, groups, el("div", { className: "pii-add" }, add, addBtn)],
-    [el("button", { type: "button", className: "ghost", textContent: "Cancel", onclick: closeModal }), go]);
+    [el("button", { type: "button", className: "ghost", textContent: tr("Cancel"), onclick: closeModal }), go]);
 
   const items = [];
   const lists = new Map();
@@ -694,9 +698,9 @@ async function openRedaction(d) {
   try {
     const res = await api(`/api/workspaces/${state.current.id}/documents/${d.id}/pii`, { method: "POST", body: {} });
     res.items.forEach((x) => addItem(x.type, x.value));
-    status.textContent = items.length ? `Found ${items.length} ${items.length === 1 ? "item" : "items"}. Untick anything that should stay.`
-      : "No personal data found automatically. Add words to remove below.";
-    if (!res.model_used) status.textContent += " The AI model was not reachable, so names and addresses were only found by pattern.";
+    status.textContent = items.length ? tr("Found {n} item. Untick anything that should stay.|Found {n} items. Untick anything that should stay.", { n: items.length })
+      : tr("No personal data found automatically. Add words to remove below.");
+    if (!res.model_used) status.textContent += tr(" The AI model was not reachable, so names and addresses were only found by pattern.");
   } catch (err) {
     if (err.message !== "unauthorised") status.textContent = err.message;
   }
@@ -710,15 +714,15 @@ async function openRedaction(d) {
       const res = await api(`/api/workspaces/${state.current.id}/documents/${d.id}/redact`, { method: "POST", body: { terms } });
       const total = res.counts.reduce((a, b) => a + b, 0);
       const missed = terms.filter((_, i) => !res.counts[i]);
-      openModal(`Preview: ${d.name} without personal data`,
+      openModal(tr("Preview: {name} without personal data", { name: d.name }),
         previewView(previewViews(res.preview, res.highlight, true),
-          `${total} ${total === 1 ? "place" : "places"} removed.` + (missed.length ? ` Not found in the file: ${missed.join(", ")}.` : "")),
-        [el("button", { type: "button", className: "ghost", textContent: "Back", onclick: () => { closeModal(); openRedaction(d); } }),
+          tr("{n} place removed.|{n} places removed.", { n: total }) + (missed.length ? " " + tr("Not found in the file: {list}.", { list: missed.join(", ") }) : "")),
+        [el("button", { type: "button", className: "ghost", textContent: tr("Back"), onclick: () => { closeModal(); openRedaction(d); } }),
          downloadButton(res, d.kind)]);
     } catch (err) {
       if (err.message !== "unauthorised") toast(err.message);
       go.disabled = false;
-      go.textContent = "Preview redaction";
+      go.textContent = tr("Preview redaction");
     }
   });
 }
@@ -753,30 +757,30 @@ async function openCompare(d, otherId) {
   const dIsOlder = docs.indexOf(d) < docs.indexOf(other);
   pickOld.value = dIsOlder ? d.id : other.id;
   pickNew.value = dIsOlder ? other.id : d.id;
-  const swap = el("button", { type: "button", className: "ghost small", textContent: "⇄ Swap" });
+  const swap = el("button", { type: "button", className: "ghost small", textContent: tr("⇄ Swap") });
   const summary = el("p", { className: "cmp-stats muted" });
   const view = el("div", { className: "cmp-view" });
-  const explain = el("button", { type: "button", className: "primary", textContent: "Explain the changes" });
+  const explain = el("button", { type: "button", className: "primary", textContent: tr("Explain the changes") });
 
   async function run() {
     if (pickOld.value === pickNew.value) {
-      summary.textContent = "Pick two different documents.";
+      summary.textContent = tr("Pick two different documents.");
       view.replaceChildren();
       explain.disabled = true;
       return;
     }
-    summary.textContent = "Comparing…";
+    summary.textContent = tr("Comparing…");
     explain.disabled = true;
     try {
       const r = await api(`/api/workspaces/${state.current.id}/compare`, { method: "POST", body: { old_id: pickOld.value, new_id: pickNew.value } });
       const st = r.stats;
       summary.textContent = st.identical
-        ? "The text of both documents is identical."
-        : `${st.changes} changed passage${st.changes === 1 ? "" : "s"} · ${st.added_words} words added · ${st.removed_words} words removed`;
+        ? tr("The text of both documents is identical.")
+        : tr("{n} changed passage|{n} changed passages", { n: st.changes }) + " · " + tr("{n} words added", { n: st.added_words }) + " · " + tr("{n} words removed", { n: st.removed_words });
       view.innerHTML = r.html; // built server-side from escaped text
       explain.disabled = false;
     } catch (err) {
-      summary.textContent = err.message;
+      summary.textContent = tr(err.message);
     }
   }
   pickOld.addEventListener("change", run);
@@ -785,14 +789,14 @@ async function openCompare(d, otherId) {
   explain.addEventListener("click", () => {
     const a = docs.find((x) => x.id === pickOld.value), b = docs.find((x) => x.id === pickNew.value);
     closeModal();
-    send(`What changed from ${a.name} to ${b.name}, and what does it mean for me?`, [a.id, b.id]);
+    send(tr("What changed from {a} to {b}, and what does it mean for me?", { a: a.name, b: b.name }), [a.id, b.id]);
   });
   const legend = el("p", { className: "small muted cmp-legend" },
-    el("del", { textContent: "removed" }), " ", el("ins", { textContent: "added" }), " · compared word by word on this server");
+    el("del", { textContent: tr("removed") }), " ", el("ins", { textContent: tr("added") }), " · " + tr("compared word by word on this server"));
   openModal("Compare documents", el("div", { className: "cmp" },
     el("div", { className: "cmp-pick" },
-      el("label", {}, el("span", { className: "small muted", textContent: "Older version" }), pickOld), swap,
-      el("label", {}, el("span", { className: "small muted", textContent: "Newer version" }), pickNew)),
+      el("label", {}, el("span", { className: "small muted", textContent: tr("Older version") }), pickOld), swap,
+      el("label", {}, el("span", { className: "small muted", textContent: tr("Newer version") }), pickNew)),
     summary, legend, view), [explain]);
   await run();
 }
@@ -808,14 +812,15 @@ function attachSources(msgEl, sources) {
     const chip = document.createElement("button");
     chip.className = "source-chip";
     chip.textContent = s.chunk == null ? `[${s.id}] ${s.document} · full document` : `[${s.id}] ${s.document} · part ${s.chunk}`;
-    if (s.match) chip.title = MATCH_LABEL[s.match] || "";
+    if (s.match) chip.title = matchLabel(s.match);
     chip.addEventListener("click", () => showSource(msgEl, s.id));
     row.append(chip);
   }
   msgEl.append(row);
 }
 
-const MATCH_LABEL = { meaning: "Found by meaning", keywords: "Found by keywords", both: "Found by meaning and keywords" };
+const MATCH = { meaning: "Found by meaning", keywords: "Found by keywords", both: "Found by meaning and keywords" };
+const matchLabel = (m) => (MATCH[m] ? tr(MATCH[m]) : "");
 
 function showSource(msgEl, id) {
   const s = (msgEl._sources || []).find((x) => String(x.id) === String(id));
@@ -827,7 +832,7 @@ function showSource(msgEl, id) {
   const title = document.createElement("b");
   title.textContent = s.chunk == null
     ? `[${s.id}] ${s.document}, full document (beginning shown)\n`
-    : `[${s.id}] ${s.document}, part ${s.chunk} · ${MATCH_LABEL[s.match] || "relevance " + s.score}\n`;
+    : `[${s.id}] ${s.document}, part ${s.chunk} · ${matchLabel(s.match) || "relevance " + s.score}\n`;
   box.replaceChildren(title, document.createTextNode(s.excerpt + (s.chunk == null && s.excerpt.length >= 400 ? "…" : "")));
 }
 
@@ -849,10 +854,10 @@ let controller = null;
 
 function setStreaming(on) {
   state.busy = on;
-  sendBtn.textContent = on ? "Stop" : "Send";
+  sendBtn.textContent = on ? tr("Stop") : tr("Send");
   sendBtn.classList.toggle("stop", on);
   sendBtn.type = on ? "button" : "submit";
-  sendBtn.setAttribute("aria-label", on ? "Stop the answer" : "Send");
+  sendBtn.setAttribute("aria-label", on ? tr("Stop the answer") : tr("Send"));
 }
 
 sendBtn.addEventListener("click", (e) => {
@@ -923,7 +928,7 @@ async function send(text, comparePair = null) {
       stopped = true;
     } else if (err.message !== "unauthorised") {
       reply.classList.add("error");
-      textEl.textContent = err.message;
+      textEl.textContent = tr(err.message);
       answer = "";
     }
   } finally {
@@ -931,7 +936,7 @@ async function send(text, comparePair = null) {
     if (stopped) {
       const note = document.createElement("p");
       note.className = "stopped";
-      note.textContent = answer ? "Stopped." : "Stopped before Paradox started writing.";
+      note.textContent = answer ? tr("Stopped.") : tr("Stopped before Paradox started writing.");
       textEl.append(note);
     }
     if (answer) {
@@ -951,10 +956,37 @@ function attachCompare(msgEl, [oldId, newId]) {
   const docs = state.current.documents;
   const a = docs.find((x) => x.id === oldId), b = docs.find((x) => x.id === newId);
   if (!a || !b) return;
-  const btn = el("button", { type: "button", className: "source-chip wide", textContent: `Compared ${a.name} → ${b.name} · show differences` });
+  const btn = el("button", { type: "button", className: "source-chip wide", textContent: tr("Compared {a} → {b} · show differences", { a: a.name, b: b.name }) });
   btn.addEventListener("click", () => openCompare(a, b.id));
   msgEl.append(el("div", { className: "sources" }, btn));
 }
+
+// ------------------------------------------------------------------ language
+
+// Re-label the page in place; reloading is avoided so nothing on screen is lost.
+function relabel() {
+  window.i18n.apply(document);
+  const login = $("#login-error");
+  if (login.dataset.en) login.textContent = tr(login.dataset.en);
+  if (state.me) $("#idle-note").textContent = tr("Data is wiped on sign-out or after {n} min idle.", { n: state.me.idle_minutes });
+  if (!state.current) $("#ws-title").textContent = tr("No workspace");
+  else $("#ws-title").textContent = wsName(state.current.name);
+  renderSidebar();
+  const empty = $("#messages .empty");
+  if (empty) empty.replaceWith(emptyState(!state.current));
+  if (!state.busy) { $("#send").textContent = tr("Send"); }
+  else setStreaming(true);
+  renderDocs();
+  const other = window.i18n.lang === "de" ? "en" : "de";
+  $("#lang").textContent = other.toUpperCase();
+  $("#lang").setAttribute("aria-label", other === "de" ? "Sprache: Deutsch" : "Language: English");
+  $("#lang-login").textContent = other === "de" ? "Deutsch" : "English";
+}
+const switchLang = () => window.i18n.set(window.i18n.lang === "de" ? "en" : "de");
+$("#lang").addEventListener("click", switchLang);
+$("#lang-login").addEventListener("click", switchLang);
+window.i18n.onChange(relabel);
+relabel();
 
 // ------------------------------------------------------------------ boot
 

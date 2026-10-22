@@ -9,6 +9,10 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com; img-src 'self' data: blob:; style-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>Paradox Lite</title>
   <meta name="description" content="Chat with and edit your documents using an AI that runs entirely in your browser. Nothing is uploaded or stored.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#2f6f5e">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -17,12 +21,12 @@
       <a class="brand" href="../"><span class="dot"></span>Paradox <span class="lite">Lite</span></a>
 
       <section class="card" id="model-card">
-        <h2>AI model</h2>
+        <h2 data-i18n>AI model</h2>
         <div id="gpu-missing" class="warn" hidden>
-          <strong>Your browser can't run the AI.</strong>
-          <span>Paradox Lite needs WebGPU. Use a recent Chrome or Edge on a computer. Firefox and Safari support is still limited.</span>
+          <strong data-i18n>Your browser can't run the AI.</strong>
+          <span data-i18n>Paradox Lite needs WebGPU. Use a recent Chrome or Edge on a computer. Firefox and Safari support is still limited.</span>
         </div>
-        <label for="model-select" class="label">Choose a model</label>
+        <label for="model-select" class="label" data-i18n>Choose a model</label>
         <select id="model-select"></select>
         <p id="model-note" class="muted small"></p>
         <button id="load-model" class="primary" type="button">Download &amp; start</button>
@@ -31,50 +35,54 @@
           <span id="progress-text" class="small muted"></span>
         </div>
         <p id="model-ready" class="ok small" hidden></p>
-        <button id="forget-model" class="link small" type="button" hidden>Remove downloaded model from this browser</button>
+        <button id="forget-model" class="link small" type="button" hidden data-i18n>Remove downloaded model from this browser</button>
       </section>
 
       <section class="card">
-        <h2>Documents</h2>
+        <h2 data-i18n>Documents</h2>
         <label id="drop" class="drop" for="file-input">
           <input id="file-input" type="file" multiple hidden accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.markdown,.csv,.json,.log,.html,.htm,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp">
-          <span>Drop files or <u>browse</u></span>
-          <small class="muted">PDF, Word, Excel, PowerPoint, scans · read on this device</small>
+          <span data-i18n-html>Drop files or <u>browse</u></span>
+          <small class="muted" data-i18n>PDF, Word, Excel, PowerPoint, scans · read on this device</small>
         </label>
         <ul id="doc-list" class="docs"></ul>
-        <label class="switch meaning-row"><input type="checkbox" id="meaning" checked> <span>Meaning-based search</span></label>
+        <label class="switch meaning-row"><input type="checkbox" id="meaning" checked> <span data-i18n>Meaning-based search</span></label>
         <p id="meaning-note" class="small muted meaning-note"></p>
       </section>
 
       <section class="card private">
-        <strong>Nothing leaves this page.</strong>
-        <span>Files are read and answered on your device. Close the tab and everything is gone. The only download is the public AI model.</span>
-        <button id="wipe" class="ghost" type="button">Wipe documents &amp; chat</button>
+        <strong data-i18n>Nothing leaves this page.</strong>
+        <span data-i18n>Files are read and answered on your device. Close the tab and everything is gone. The only downloads are the public AI models.</span>
+        <button id="wipe" class="ghost" type="button" data-i18n>Wipe documents &amp; chat</button>
+        <a class="small security-link" href="../security.html" data-i18n>How to check it yourself</a>
       </section>
     </aside>
 
     <main class="main">
       <header class="top">
-        <button id="menu" class="icon only-narrow" type="button" aria-label="Show documents and model">☰</button>
-        <h1>Your private workspace</h1>
-        <span id="status" class="status off">No model loaded</span>
+        <button id="menu" class="icon only-narrow" type="button" aria-label="Show documents and model" data-i18n-attr="aria-label">☰</button>
+        <h1 data-i18n>Your private workspace</h1>
+        <span id="offline" class="status offline" hidden data-i18n>Works offline</span>
+        <span id="status" class="status off" data-en="No model loaded">No model loaded</span>
+        <button id="install" class="ghost install" type="button" hidden data-i18n>Install app</button>
+        <button id="lang" class="ghost lang" type="button" aria-label="Sprache: Deutsch">DE</button>
       </header>
 
       <div id="messages" class="messages" aria-live="polite">
         <div class="empty" id="empty">
-          <h3>Ask about a document, or have it edited</h3>
+          <h3 data-i18n>Ask about a document, or have it edited</h3>
           <ol>
-            <li>Pick a model and click <b>Download &amp; start</b>. The first time takes a few minutes.</li>
-            <li>Drop in a PDF, Word file or text.</li>
-            <li>Ask a question, or say <i>“rewrite this more formally”</i>, then download the result as PDF or Word.</li>
-            <li>Two versions of a contract? Drop in both and ask <i>“what changed?”</i></li>
+            <li data-i18n-html>Pick a model and click <b>Download &amp; start</b>. The first time takes a few minutes.</li>
+            <li data-i18n-html>Drop in a PDF, Word file or text.</li>
+            <li data-i18n-html>Ask a question, or say <i>“rewrite this more formally”</i>, then download the result as PDF or Word.</li>
+            <li data-i18n-html>Two versions of a contract? Drop in both and ask <i>“what changed?”</i></li>
           </ol>
         </div>
       </div>
 
       <div id="layout-row" class="layout-row" hidden>
-        <label class="switch"><input type="checkbox" id="keep-layout" checked> <span>Keep original layout</span></label>
-        <small class="muted">Changes are applied to your original file.</small>
+        <label class="switch"><input type="checkbox" id="keep-layout" checked> <span data-i18n>Keep original layout</span></label>
+        <small class="muted" data-i18n>Changes are applied to your original file.</small>
       </div>
       <form id="chat-form" class="composer">
         <textarea id="chat-input" rows="1" maxlength="8000" placeholder="Load a model to start…" disabled></textarea>
@@ -87,7 +95,7 @@
     <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <header class="modal-head">
         <h2 id="modal-title"></h2>
-        <button id="modal-close" class="icon" type="button" aria-label="Close">✕</button>
+        <button id="modal-close" class="icon" type="button" aria-label="Close" data-i18n-attr="aria-label">✕</button>
       </header>
       <div id="modal-body" class="modal-body"></div>
       <footer id="modal-foot" class="modal-foot"></footer>
@@ -96,6 +104,7 @@
 
   <div id="toast" class="toast" role="status" hidden></div>
 
+  <script src="i18n.js"></script>
   <script src="vendor/mammoth.browser.min.js"></script>
   <script src="vendor/jspdf.umd.min.js"></script>
   <script src="vendor/docx.iife.js"></script>
