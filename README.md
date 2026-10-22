@@ -24,6 +24,8 @@ Paradox is a self-hosted, multi-user AI assistant for confidential documents. Up
 - Several workspaces per user, each with its own documents, chat and custom instructions
 - Upload PDF, DOCX, TXT, Markdown, CSV, JSON, HTML and log files
 - Ask anything about a document, or ask Paradox to edit it ("rewrite this more formally", "fix the typos") and copy or download the result
+- **Remove personal data:** finds names, addresses, emails, phone numbers, IBANs, card numbers, dates of birth and ID numbers, lets you tick what goes, then truly redacts it (the text is removed from the file, not covered) and wipes the author and other hidden properties
+- **Preview before download:** every edit or redaction opens a Before/After preview of the real pages with the changes highlighted
 - **Keep original layout:** for PDF and Word files, Paradox proposes precise changes, you tick the ones you want, and it applies them to your original file. Logos, tables, fonts, colours and page layout stay as they were
 - Short documents are read in full; large ones are searched by passage. Answers stream live with clickable `[1]` citations
 - Model choice: **Ollama** (fully local), **OpenAI** or any OpenAI-compatible server, or **Anthropic**
@@ -38,7 +40,7 @@ FIND: Die Laufzeit beträgt 24 Monate.
 REPLACE: Die Laufzeit beträgt 36 Monate.
 ```
 
-You review them, untick any you don't want, and download the edited original.
+Before you see them, Paradox **checks every change against your document**. If the model paraphrased the text it wants to replace, Paradox finds the closest real passage and asks the model once to correct the change; anything still not found is unticked and marked. You then untick anything you don't want, look at a Before/After preview of the real pages, and download the edited original.
 
 - **PDF:** each change is located by its words (tolerant of punctuation, quotes, case, line-break hyphens and small wording differences). The affected lines are removed with a real redaction, so the old text is gone from the file, not hidden under a box. The new text is drawn in the same place, size and colour, justified, left, right or centred like the original. Paradox reuses the PDF's own embedded font when it contains every needed letter, otherwise a font with identical letter widths (Carlito for Calibri, Liberation for Arial and Times, DejaVu), otherwise a standard font scaled to the same width. If the new text is longer, it uses free space below or is set slightly smaller, and tells you so.
 - **Word:** only the words that differ are replaced inside the existing runs, so bold, italics, colours, styles, tables, headers and footers are untouched.

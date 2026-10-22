@@ -135,7 +135,7 @@ function renderWorkspace() {
       b.querySelector(".text").append(note);
     }
     attachActions(b, body, ws.documents[0]?.name);
-    renderChanges(b, body);
+    renderChanges(b, body, null);
     box.append(b);
   }
   box.scrollTop = box.scrollHeight;
@@ -232,7 +232,17 @@ function renderDocs(pending = []) {
       await api(`/api/workspaces/${state.current.id}/documents/${d.id}`, { method: "DELETE" });
       await loadWorkspaces(state.current.id);
     });
-    li.append(name, meta, del);
+    if (!d.editable) { li.append(name, meta, del); return li; }
+    const row = document.createElement("div");
+    row.className = "doc-row";
+    row.append(name, meta, del);
+    const tools = document.createElement("div");
+    tools.className = "doc-tools";
+    const redact = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Remove personal data" });
+    redact.addEventListener("click", () => openRedaction(d));
+    tools.append(redact);
+    li.className = "doc-item";
+    li.append(row, tools);
     return li;
   });
   for (const p of pending) {
@@ -385,72 +395,238 @@ function parseChanges(answer) {
   return { intro: first > 0 ? text.slice(0, first).trim() : "", changes: out };
 }
 
-function renderChanges(msgEl, answer) {
-  const { intro, changes } = parseChanges(answer.replace(/\s*\[stopped\]$/, ""));
-  const docs = editableDocs();
-  if (!changes.length) return;
+// ---- modal
+
+let modalReturn = null;
+function el(tag, props = {}, ...children) {
+  const n = Object.assign(document.createElement(tag), props);
+  n.append(...children.filter((c) => c != null));
+  return n;
+}
+function openModal(title, body, actions) {
+  modalReturn = document.activeElement;
+  $("#modal-title").textContent = title;
+  $("#modal-body").replaceChildren(...[].concat(body));
+  $("#modal-foot").replaceChildren(...[].concat(actions || []));
+  $("#modal").hidden = false;
+  document.body.classList.add("modal-open");
+  $("#modal-close").focus();
+}
+function closeModal() {
+  if ($("#modal").hidden) return;
+  $("#modal").hidden = true;
+  document.body.classList.remove("modal-open");
+  $("#modal-body").replaceChildren();
+  modalReturn?.focus?.();
+}
+$("#modal-close").addEventListener("click", closeModal);
+$("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+
+const MIME = { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
+
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function markText(root, needles, cls) {
+  const terms = needles.filter((t) => t && t.trim().length > 1);
+  if (!terms.length) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    for (const t of terms) {
+      const i = node.data.indexOf(t);
+      if (i < 0) continue;
+      const hit = node.splitText(i);
+      hit.splitText(t.length);
+      const mark = el("mark", { className: cls });
+      hit.parentNode.replaceChild(mark, hit);
+      mark.append(hit);
+      break;
+    }
+  }
+}
+
+// Build Before/After views from the server's preview data.
+function previewViews(pv, highlight, black) {
+  if (pv.kind === "pdf") {
+    const render = (pages) => pages.map((pg) => {
+      const img = el("img", { src: `data:image/png;base64,${pg.png}`, alt: `Page ${pg.page + 1}` });
+      const wrap = el("div", { className: "pv-page" }, img);
+      for (const m of pv.marks.filter((x) => x.page === pg.page)) {
+        const [x0, y0, x1, y1] = m.rect;
+        const box = el("i", { className: black ? "pv-mark pv-black" : "pv-mark" });
+        Object.assign(box.style, { left: `${(x0 / pg.width) * 100}%`, top: `${(y0 / pg.height) * 100}%`,
+          width: `${((x1 - x0) / pg.width) * 100}%`, height: `${((y1 - y0) / pg.height) * 100}%` });
+        wrap.append(box);
+      }
+      wrap.append(el("span", { className: "pv-num", textContent: `Page ${pg.page + 1}` }));
+      return wrap;
+    });
+    return { after: render(pv.after), before: render(pv.before) };
+  }
+  const html = (h, needles) => {
+    const div = el("div", { className: "pv-docx" });
+    div.innerHTML = h;
+    div.querySelectorAll("script,style,iframe,object").forEach((n) => n.remove());
+    markText(div, needles, "pv-hl");
+    return [div];
+  };
+  return { after: html(pv.after_html, highlight), before: html(pv.before_html, []) };
+}
+
+function previewView(views, note) {
+  const stage = el("div", { className: "pv-stage" });
+  const tabA = el("button", { type: "button", className: "seg", textContent: "After" });
+  const tabB = el("button", { type: "button", className: "seg", textContent: "Before" });
+  const show = (which) => {
+    stage.replaceChildren(...views[which]);
+    tabA.setAttribute("aria-pressed", which === "after");
+    tabB.setAttribute("aria-pressed", which === "before");
+  };
+  tabA.addEventListener("click", () => show("after"));
+  tabB.addEventListener("click", () => show("before"));
+  show("after");
+  return [el("div", { className: "pv-bar" }, el("div", { className: "segs" }, tabA, tabB),
+    note ? el("span", { className: "muted small", textContent: note }) : null), stage];
+}
+
+function downloadButton(result, kind) {
+  const b = el("button", { type: "button", className: "primary", textContent: `Download ${result.filename}` });
+  b.addEventListener("click", () => {
+    saveBlob(new Blob([b64ToBytes(result.file)], { type: MIME[kind] }), result.filename);
+    toast("Your file is downloading.");
+  });
+  return b;
+}
+
+// ---- edits (checked by the server)
+
+function renderChanges(msgEl, answer, checked) {
+  const { intro, changes: parsed } = parseChanges(answer.replace(/\s*\[stopped\]$/, ""));
+  if (!parsed.length) return;
+  const changes = checked?.changes?.length ? checked.changes : parsed.map((c) => ({ ...c, status: "", message: "" }));
+  const target = editableDocs().find((d) => d.id === checked?.doc_id) || editableDocs()[0];
   const textEl = msgEl.querySelector(".text");
   textEl.innerHTML = intro ? renderMarkdown(intro) : "";
-  // The plain-text exports make no sense for a list of changes; keep Copy only.
   msgEl.querySelectorAll(".actions button").forEach((b) => { if (b.textContent !== "Copy") b.remove(); });
 
-  const card = document.createElement("div");
-  card.className = "changes";
-  const list = document.createElement("ol");
+  const stamp = Date.now();
   const rows = changes.map((c, i) => {
-    const li = document.createElement("li");
-    const box = Object.assign(document.createElement("input"), { type: "checkbox", checked: true, id: `chg-${Date.now()}-${i}` });
+    const box = el("input", { type: "checkbox", checked: c.status !== "fail", id: `chg-${stamp}-${i}` });
     box.setAttribute("aria-label", `Include change ${i + 1}`);
-    const body = document.createElement("label");
-    body.htmlFor = box.id;
-    const del = Object.assign(document.createElement("del"), { textContent: c.find });
-    const ins = Object.assign(document.createElement("ins"), { textContent: c.replace || "(removed)" });
-    const status = Object.assign(document.createElement("span"), { className: "status" });
-    body.append(del, ins, status);
-    li.append(box, body);
-    list.append(li);
+    const status = el("span", { className: "chg-status", textContent: c.message || "" });
+    const li = el("li", { className: c.status === "fail" ? "fail" : c.status ? "ok" : "" }, box,
+      el("label", { htmlFor: box.id }, el("del", { textContent: c.find }), el("ins", { textContent: c.replace || "(removed)" }), status));
     return { box, status, li };
   });
-  const head = Object.assign(document.createElement("div"), { className: "changes-head",
-    textContent: `${changes.length} ${changes.length === 1 ? "change" : "changes"} to your original file` });
-  const btns = document.createElement("div");
-  btns.className = "changes-actions";
-  if (!docs.length) {
-    btns.append(Object.assign(document.createElement("small"), { className: "muted",
-      textContent: "Upload the original PDF or Word file to apply these changes." }));
+  const btn = el("button", { type: "button", className: "primary", textContent: target ? `Preview changes to ${target.name}` : "Preview changes" });
+  const actions = el("div", { className: "changes-actions" }, target ? btn
+    : el("small", { className: "muted", textContent: "Upload the original PDF or Word file to apply these changes." }));
+  textEl.append(el("div", { className: "changes" },
+    el("div", { className: "changes-head", textContent: `${changes.length} ${changes.length === 1 ? "change" : "changes"} to your original file` }),
+    el("ol", {}, ...rows.map((r) => r.li)), actions));
+  if (!target) return;
+
+  btn.addEventListener("click", async () => {
+    const idx = changes.map((_, i) => i).filter((i) => rows[i].box.checked);
+    if (!idx.length) { toast("Select at least one change."); return; }
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = "Preparing preview…";
+    try {
+      const res = await api(`/api/workspaces/${state.current.id}/documents/${target.id}/preview`, {
+        method: "POST", body: { changes: idx.map((i) => ({ find: changes[i].find, replace: changes[i].replace })) } });
+      res.report.forEach((r) => {
+        const row = rows[idx[r.index]];
+        row.li.className = r.ok ? "ok" : "fail";
+        row.status.textContent = r.ok ? (r.note ? `Ready, ${r.note}.` : "Ready.") : `Can't be applied: ${r.reason}.`;
+      });
+      const ok = res.report.filter((r) => r.ok).length;
+      if (!ok) { toast("None of the changes could be applied. See the list for details."); return; }
+      openModal("Preview of your edited file",
+        previewView(previewViews(res.preview, res.highlight, false),
+          ok < res.report.length ? `${ok} of ${res.report.length} changes applied.` : "Changed text is highlighted."),
+        [el("button", { type: "button", className: "ghost", textContent: "Back", onclick: closeModal }), downloadButton(res, target.kind)]);
+    } catch (err) {
+      if (err.message !== "unauthorised") toast(err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  });
+}
+
+// ---- remove personal data
+
+const PII_LABELS = { name: "Names", address: "Addresses", email: "Email addresses", phone: "Phone numbers",
+  iban: "Bank accounts (IBAN)", card: "Card numbers", birthdate: "Dates of birth", id: "ID and tax numbers", custom: "Your own words" };
+
+async function openRedaction(d) {
+  const status = el("p", { className: "muted", textContent: "Looking for personal data…" });
+  const groups = el("div", { className: "pii-groups" });
+  const add = el("input", { type: "text", id: "pii-add", placeholder: "Add a word or name to remove", maxLength: 200 });
+  const addBtn = el("button", { type: "button", className: "ghost", textContent: "Add" });
+  const go = el("button", { type: "button", className: "primary", textContent: "Preview redaction", disabled: true });
+  openModal(`Remove personal data from ${d.name}`,
+    [el("p", { className: "small muted", textContent: "Everything you tick is blacked out and removed from the file itself, not just hidden. The author and other hidden properties are wiped too. Automatic detection can miss things, so check the preview and add anything that is still visible." }),
+     status, groups, el("div", { className: "pii-add" }, add, addBtn)],
+    [el("button", { type: "button", className: "ghost", textContent: "Cancel", onclick: closeModal }), go]);
+
+  const items = [];
+  const lists = new Map();
+  const addItem = (type, value) => {
+    if (items.some((x) => x.value === value)) return;
+    if (!lists.has(type)) {
+      const ul = el("ul", {});
+      lists.set(type, ul);
+      groups.append(el("fieldset", { className: "pii-group" }, el("legend", { textContent: PII_LABELS[type] || type }), ul));
+    }
+    const id = `pii-${items.length}-${Date.now()}`;
+    const box = el("input", { type: "checkbox", checked: true, id });
+    lists.get(type).append(el("li", {}, box, el("label", { htmlFor: id, textContent: value })));
+    items.push({ value, box });
+    go.disabled = false;
+  };
+  const doAdd = () => { const v = add.value.trim(); if (v) { addItem("custom", v); add.value = ""; add.focus(); } };
+  addBtn.addEventListener("click", doAdd);
+  add.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
+
+  try {
+    const res = await api(`/api/workspaces/${state.current.id}/documents/${d.id}/pii`, { method: "POST", body: {} });
+    res.items.forEach((x) => addItem(x.type, x.value));
+    status.textContent = items.length ? `Found ${items.length} ${items.length === 1 ? "item" : "items"}. Untick anything that should stay.`
+      : "No personal data found automatically. Add words to remove below.";
+    if (!res.model_used) status.textContent += " The AI model was not reachable, so names and addresses were only found by pattern.";
+  } catch (err) {
+    if (err.message !== "unauthorised") status.textContent = err.message;
   }
-  for (const d of docs) {
-    const b = Object.assign(document.createElement("button"), { type: "button", className: "primary",
-      textContent: `Download edited ${d.name}` });
-    b.addEventListener("click", async () => {
-      const picked = changes.filter((_, i) => rows[i].box.checked);
-      if (!picked.length) { toast("Select at least one change."); return; }
-      b.disabled = true;
-      try {
-        const res = await api(`/api/workspaces/${state.current.id}/documents/${d.id}/apply`,
-          { method: "POST", body: { changes: picked }, raw: true });
-        let report = [];
-        try { report = JSON.parse(res.headers.get("X-Paradox-Report") || "[]"); } catch {}
-        const idx = changes.map((_, i) => i).filter((i) => rows[i].box.checked);
-        report.forEach((r) => {
-          const row = rows[idx[r.index]];
-          row.li.className = r.ok ? "ok" : "fail";
-          row.status.textContent = r.ok ? (r.note ? `Applied, ${r.note}.` : "Applied.") : `Not applied: ${r.reason}.`;
-        });
-        const okCount = report.filter((r) => r.ok).length;
-        if (okCount) saveBlob(await res.blob(), d.name.replace(/(\.[^.]+)$/, "_edited$1"));
-        toast(okCount === report.length ? "All changes applied. Your edited file is downloading."
-          : `${okCount} of ${report.length} changes applied. See the list for details.`);
-      } catch (err) {
-        if (err.message !== "unauthorised") toast(err.message);
-      } finally {
-        b.disabled = false;
-      }
-    });
-    btns.append(b);
-  }
-  card.append(head, list, btns);
-  textEl.append(card);
+
+  go.addEventListener("click", async () => {
+    const terms = items.filter((x) => x.box.checked).map((x) => x.value);
+    if (!terms.length) { toast("Select at least one item."); return; }
+    go.disabled = true;
+    go.textContent = "Redacting…";
+    try {
+      const res = await api(`/api/workspaces/${state.current.id}/documents/${d.id}/redact`, { method: "POST", body: { terms } });
+      const total = res.counts.reduce((a, b) => a + b, 0);
+      const missed = terms.filter((_, i) => !res.counts[i]);
+      openModal(`Preview: ${d.name} without personal data`,
+        previewView(previewViews(res.preview, res.highlight, true),
+          `${total} ${total === 1 ? "place" : "places"} removed.` + (missed.length ? ` Not found in the file: ${missed.join(", ")}.` : "")),
+        [el("button", { type: "button", className: "ghost", textContent: "Back", onclick: () => { closeModal(); openRedaction(d); } }),
+         downloadButton(res, d.kind)]);
+    } catch (err) {
+      if (err.message !== "unauthorised") toast(err.message);
+      go.disabled = false;
+      go.textContent = "Preview redaction";
+    }
+  });
 }
 
 function attachSources(msgEl, sources) {
@@ -537,6 +713,7 @@ $("#chat-form").addEventListener("submit", async (e) => {
   let answer = "";
   let sources = [];
   let stopped = false;
+  let checked = null;
   try {
     const res = await api(`/api/workspaces/${ws.id}/chat`, {
       method: "POST", body: { message: text, keep_layout: !$("#layout-row").hidden && $("#keep-layout").checked }, raw: true, signal: controller.signal,
@@ -556,6 +733,7 @@ $("#chat-form").addEventListener("submit", async (e) => {
         const ev = JSON.parse(line);
         if (ev.type === "sources") sources = ev.sources;
         else if (ev.type === "token") { answer += ev.text; textEl.innerHTML = renderMarkdown(answer); }
+        else if (ev.type === "changes") checked = ev;
         else if (ev.type === "error") throw new Error(ev.message);
         const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
         if (nearBottom) box.scrollTop = box.scrollHeight;
@@ -580,7 +758,7 @@ $("#chat-form").addEventListener("submit", async (e) => {
     if (answer) {
       attachSources(reply, sources);
       attachActions(reply, answer, sources[0]?.document);
-      renderChanges(reply, answer);
+      renderChanges(reply, answer, checked);
       ws.history.push({ role: "user", content: text }, { role: "assistant", content: answer + (stopped ? "\n\n[stopped]" : "") });
     }
     controller = null;

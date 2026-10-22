@@ -382,9 +382,12 @@ def _apply_pdf_change(doc, change):
     lefts_ok = all(abs(r.x0 - bx0) < 1.5 for r in block_rects)
     rights_ok = all(abs(r.x1 - bx1) < 1.5 for r in block_rects)
     full = [r for r in block_rects[:-1] if abs(r.x1 - bx1) < 2 and abs(r.x0 - bx0) < 2]
+    # The column's right edge: the furthest any line starting at this paragraph's left edge reaches.
+    column_right = max(r.x1 for r in rects.values() if abs(r.x0 - bx0) < 2)
     justified = (len(block_rects) > 2 and lefts_ok and len(full) == len(block_rects) - 1
                  and block_rects[-1].x1 < bx1 - 0.05 * (bx1 - bx0)) or (
-                 len(block_rects) == 2 and lefts_ok and abs(block_rects[0].x1 - bx1) < 2
+                 len(block_rects) == 2 and lefts_ok and abs(block_rects[0].x1 - column_right) < 2
+                 and sum(abs(r.x1 - column_right) < 2 for r in rects.values() if abs(r.x0 - bx0) < 2) >= 2
                  and block_rects[-1].x1 < bx1 - 0.05 * (bx1 - bx0) and block_rects[0].width > page.rect.width * 0.5)
     last_is_para_end = block_lines.index(last) == len(block_lines) - 1
     align = "left"
@@ -503,6 +506,7 @@ def _apply_pdf_change(doc, change):
         y += step
     if s < size * 0.92:
         change["_note"] = "set in a smaller size so it fits the original space"
+    change["_mark"] = {"page": page.number, "rect": [area.x0, area.y0, area.x1, max(area.y1, y - step + s * 0.3)]}
     return None
 
 
@@ -518,7 +522,8 @@ def apply_pdf(data: bytes, changes: list[dict]) -> tuple[bytes, list[dict]]:
             err = _apply_pdf_change(doc, ch)
         except Exception as exc:  # noqa: BLE001 - one bad change must not stop the others
             err = f"could not be applied ({type(exc).__name__})"
-        report.append({"index": i, "ok": err is None, "reason": err, "note": ch.pop("_note", None)})
+        report.append({"index": i, "ok": err is None, "reason": err, "note": ch.pop("_note", None),
+                       "mark": ch.pop("_mark", None)})
     if any(r["ok"] for r in report):
         doc.subset_fonts()
     out = doc.tobytes(garbage=3, deflate=True)

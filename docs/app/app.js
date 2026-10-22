@@ -10,7 +10,8 @@
 // - Closing the tab, or "Wipe", drops everything.
 
 import * as pdfjs from "./vendor/pdf.min.mjs";
-import { parseChanges, applyPdf, applyDocx } from "./layout.js";
+import { parseChanges, applyPdf, applyDocx, locate, closestPassage, detectPII, piiPrompt, parsePiiAnswer,
+  redactPdf, redactDocx, renderPages, PII_LABELS } from "./layout.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
 
@@ -209,8 +210,20 @@ class FakeEngine {
   async unload() {}
   get chat() {
     const self = this;
-    return { completions: { async create({ messages }) {
+    return { completions: { async create({ messages, stream }) {
       self._stop = false;
+      if (!stream) {
+        const sys = messages[0].content, user = messages[messages.length - 1].content;
+        let content = "NONE";
+        if (/find personal data/i.test(sys)) {
+          const lines = (/<document>\n([\s\S]*?)<\/document>/.exec(user)?.[1] || "").split("\n").map((l) => l.trim()).filter(Boolean);
+          content = lines.slice(0, 1).map((l) => `NAME: ${l}`).join("\n");
+        } else if (/correct FIND/i.test(sys)) {
+          content = [...user.matchAll(/Closest text in the document: (.+)\nYour REPLACE: (.*)/g)]
+            .map((m) => `FIND: ${m[1]}\nREPLACE: ${m[1].toUpperCase()}`).join("\n\n");
+        }
+        return { choices: [{ message: { content } }] };
+      }
       const last = messages[messages.length - 1].content;
       const layout = messages[0].content.includes("Layout mode is ON");
       const n = (last.match(/<source id=/g) || []).length;
@@ -346,6 +359,17 @@ function renderDocs(pending = []) {
     del.setAttribute("aria-label", `Remove ${d.name}`);
     del.addEventListener("click", () => { state.docs = state.docs.filter((x) => x !== d); renderDocs(); });
     li.append(name, meta, del);
+    if (!d.original) return li;
+    const tools = document.createElement("div");
+    tools.className = "doc-tools";
+    const redact = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Remove personal data" });
+    redact.addEventListener("click", () => openRedaction(d));
+    tools.append(redact);
+    const row = document.createElement("div");
+    row.className = "doc-row";
+    row.append(...li.childNodes);
+    li.className = "doc-item";
+    li.append(row, tools);
     return li;
   });
   for (const p of pending) {
@@ -650,9 +674,160 @@ async function loadFont(file) {
   return res.ok ? new Uint8Array(await res.arrayBuffer()) : null;
 }
 
+
+// ---- modal
+
+let modalReturn = null;
+function openModal(title, body, actions) {
+  const m = $("#modal");
+  modalReturn = document.activeElement;
+  $("#modal-title").textContent = title;
+  $("#modal-body").replaceChildren(...[].concat(body));
+  $("#modal-foot").replaceChildren(...[].concat(actions || []));
+  m.hidden = false;
+  document.body.classList.add("modal-open");
+  $("#modal-close").focus();
+}
+function closeModal() {
+  const m = $("#modal");
+  if (m.hidden) return;
+  m.hidden = true;
+  document.body.classList.remove("modal-open");
+  for (const img of m.querySelectorAll("img[data-url]")) URL.revokeObjectURL(img.dataset.url);
+  $("#modal-body").replaceChildren();
+  modalReturn?.focus?.();
+}
+$("#modal-close").addEventListener("click", closeModal);
+$("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+
+function el(tag, props = {}, ...children) {
+  const n = Object.assign(document.createElement(tag), props);
+  n.append(...children.filter((c) => c != null));
+  return n;
+}
+
+// ---- preview
+
+const MIME = { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
+
+async function pdfPreview(before, after, marks, black) {
+  const mupdf = await loadMupdf();
+  const pages = [...new Set(marks.map((m) => m.page))].sort((a, b) => a - b).slice(0, 4);
+  if (!pages.length) pages.push(0);
+  const render = (bytes) => renderPages(mupdf, bytes, pages).map((pg) => {
+    const url = URL.createObjectURL(new Blob([pg.png], { type: "image/png" }));
+    const img = el("img", { src: url, alt: `Page ${pg.page + 1}` });
+    img.dataset.url = url;
+    const wrap = el("div", { className: "pv-page" }, img);
+    for (const m of marks.filter((x) => x.page === pg.page)) {
+      const [x0, y0, x1, y1] = m.rect;
+      const box = el("i", { className: black ? "pv-mark pv-black" : "pv-mark" });
+      Object.assign(box.style, { left: `${(x0 / pg.width) * 100}%`, top: `${(y0 / pg.height) * 100}%`,
+        width: `${((x1 - x0) / pg.width) * 100}%`, height: `${((y1 - y0) / pg.height) * 100}%` });
+      wrap.append(box);
+    }
+    wrap.append(el("span", { className: "pv-num", textContent: `Page ${pg.page + 1}` }));
+    return wrap;
+  });
+  return { after: render(after), before: render(before) };
+}
+
+function markText(root, needles, cls) {
+  const terms = needles.filter((t) => t && t.trim().length > 1);
+  if (!terms.length) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    for (const t of terms) {
+      const i = node.data.indexOf(t);
+      if (i < 0) continue;
+      const hit = node.splitText(i);
+      hit.splitText(t.length);
+      const mark = el("mark", { className: cls });
+      hit.parentNode.replaceChild(mark, hit);
+      mark.append(hit);
+      break;
+    }
+  }
+}
+
+async function docxPreview(before, after, highlight) {
+  const toHtml = async (bytes, needles) => {
+    const { value } = await window.mammoth.convertToHtml({ arrayBuffer: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) });
+    const div = el("div", { className: "pv-docx" });
+    div.innerHTML = value;
+    div.querySelectorAll("script,style,iframe,object").forEach((n) => n.remove());
+    markText(div, needles, "pv-hl");
+    return [div];
+  };
+  return { after: await toHtml(after, highlight), before: await toHtml(before, []) };
+}
+
+function previewView(views, note) {
+  const stage = el("div", { className: "pv-stage" });
+  const show = (which) => {
+    stage.replaceChildren(...views[which]);
+    tabA.setAttribute("aria-pressed", which === "after");
+    tabB.setAttribute("aria-pressed", which === "before");
+  };
+  const tabA = el("button", { type: "button", className: "seg", textContent: "After" });
+  const tabB = el("button", { type: "button", className: "seg", textContent: "Before" });
+  tabA.addEventListener("click", () => show("after"));
+  tabB.addEventListener("click", () => show("before"));
+  const bar = el("div", { className: "pv-bar" }, el("div", { className: "segs" }, tabA, tabB), note ? el("span", { className: "muted small", textContent: note }) : null);
+  show("after");
+  return [bar, stage];
+}
+
+// ---- edits with checking
+
 async function editOriginal(doc, changes) {
   if (doc.kind === "pdf") return applyPdf(await loadMupdf(), doc.original, changes, { loadFont });
   return applyDocx(window.JSZip, doc.original, changes);
+}
+
+async function askModel(messages, maxTokens = 600) {
+  const r = await state.engine.chat.completions.create({ messages, stream: false, temperature: 0, max_tokens: maxTokens });
+  return r.choices?.[0]?.message?.content || "";
+}
+
+// Make sure every FIND really exists; ask the model once to fix the ones that don't.
+async function checkChanges(doc, changes, setStatus) {
+  const missing = [];
+  changes.forEach((c, i) => {
+    const where = locate(doc.text, c.find);
+    if (where) setStatus(i, "ok", where === "exact" ? "Found in your document." : "Found in your document (wording differs slightly).");
+    else missing.push(i);
+  });
+  if (!missing.length) return;
+  const hints = missing.map((i) => ({ i, near: closestPassage(doc.text, changes[i].find) }));
+  const fixable = hints.filter((h) => h.near);
+  for (const h of hints.filter((x) => !x.near)) setStatus(h.i, "fail", "This text isn't in your document.");
+  if (!fixable.length || !state.engine) {
+    for (const h of fixable) setStatus(h.i, "fail", "This text isn't in your document.");
+    return;
+  }
+  fixable.forEach((h) => setStatus(h.i, "busy", "Matching to your document…"));
+  const prompt = fixable.map((h, k) => `Change ${k + 1}\nYour FIND: ${changes[h.i].find}\nClosest text in the document: ${h.near.text}\nYour REPLACE: ${changes[h.i].replace}`).join("\n\n");
+  let fixed = [];
+  try {
+    const answer = await askModel([
+      { role: "system", content: "You correct FIND/REPLACE edits so they match a document exactly. For each change, set FIND to the closest text from the document, copied exactly, and write REPLACE so it applies the same edit to that text. Reply only with FIND:/REPLACE: pairs, in the same order, separated by an empty line." },
+      { role: "user", content: prompt },
+    ]);
+    fixed = parseChanges(answer).changes;
+  } catch (err) { console.error(err); }
+  fixable.forEach((h, k) => {
+    const f = fixed[k];
+    if (f && locate(doc.text, f.find)) {
+      changes[h.i] = f;
+      setStatus(h.i, "fixed", "Corrected to match your document.", f);
+    } else {
+      setStatus(h.i, "fail", "This text isn't in your document.");
+    }
+  });
 }
 
 function renderChanges(msgEl, answer) {
@@ -662,63 +837,170 @@ function renderChanges(msgEl, answer) {
   const textEl = msgEl.querySelector(".text");
   textEl.innerHTML = intro ? renderMarkdown(intro) : "";
   msgEl.querySelectorAll(".actions button").forEach((b) => { if (b.textContent !== "Copy") b.remove(); });
+  // The document most of the changes belong to.
+  const target = docs.map((d) => ({ d, n: changes.filter((c) => locate(d.text, c.find)).length }))
+    .sort((a, b) => b.n - a.n)[0]?.d;
 
-  const card = Object.assign(document.createElement("div"), { className: "changes" });
-  const head = Object.assign(document.createElement("div"), { className: "changes-head",
-    textContent: `${changes.length} ${changes.length === 1 ? "change" : "changes"} to your original file` });
-  const list = document.createElement("ol");
   const stamp = Date.now();
   const rows = changes.map((c, i) => {
-    const li = document.createElement("li");
-    const box = Object.assign(document.createElement("input"), { type: "checkbox", checked: true, id: `chg-${stamp}-${i}` });
+    const box = el("input", { type: "checkbox", checked: true, id: `chg-${stamp}-${i}` });
     box.setAttribute("aria-label", `Include change ${i + 1}`);
-    const body = document.createElement("label");
-    body.htmlFor = box.id;
-    body.append(Object.assign(document.createElement("del"), { textContent: c.find }),
-      Object.assign(document.createElement("ins"), { textContent: c.replace || "(removed)" }));
-    const status = Object.assign(document.createElement("span"), { className: "chg-status" });
-    body.append(status);
-    li.append(box, body);
-    list.append(li);
-    return { box, status, li };
+    const del = el("del", { textContent: c.find });
+    const ins = el("ins", { textContent: c.replace || "(removed)" });
+    const status = el("span", { className: "chg-status", textContent: target ? "Checking…" : "" });
+    const li = el("li", {}, box, el("label", { htmlFor: box.id }, del, ins, status));
+    return { box, del, ins, status, li };
   });
-  const btns = Object.assign(document.createElement("div"), { className: "changes-actions" });
-  if (!docs.length) btns.append(Object.assign(document.createElement("small"), { className: "muted",
-    textContent: "Upload the original PDF or Word file to apply these changes." }));
-  for (const d of docs) {
-    const b = Object.assign(document.createElement("button"), { type: "button", className: "primary", textContent: `Download edited ${d.name}` });
-    b.addEventListener("click", async () => {
-      const idx = changes.map((_, i) => i).filter((i) => rows[i].box.checked);
-      if (!idx.length) { toast("Select at least one change."); return; }
-      b.disabled = true;
-      const label = b.textContent;
-      b.textContent = d.kind === "pdf" ? "Editing PDF…" : "Editing document…";
-      try {
-        const { bytes, report } = await editOriginal(d, idx.map((i) => changes[i]));
-        report.forEach((r) => {
-          const row = rows[idx[r.index]];
-          row.li.className = r.ok ? "ok" : "fail";
-          row.status.textContent = r.ok ? (r.note ? `Applied, ${r.note}.` : "Applied.") : `Not applied: ${r.reason}.`;
-        });
-        const ok = report.filter((r) => r.ok).length;
-        if (ok) {
-          const type = d.kind === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-          saveBlob(new Blob([bytes], { type }), d.name.replace(/(\.[^.]+)$/, "_edited$1"));
-        }
-        toast(ok === report.length ? "All changes applied. Your edited file is downloading."
-          : `${ok} of ${report.length} changes applied. See the list for details.`);
-      } catch (err) {
-        console.error(err);
-        toast(String(err?.message || "Could not edit this file."));
-      } finally {
-        b.disabled = false;
-        b.textContent = label;
-      }
-    });
-    btns.append(b);
+  const setStatus = (i, kind, text, fixed) => {
+    const r = rows[i];
+    r.li.className = kind === "fail" ? "fail" : kind === "busy" ? "" : "ok";
+    r.status.textContent = text;
+    if (kind === "fail") r.box.checked = false;
+    if (fixed) { r.del.textContent = fixed.find; r.ins.textContent = fixed.replace || "(removed)"; }
+  };
+  const btn = el("button", { type: "button", className: "primary", textContent: target ? `Preview changes to ${target.name}` : "Preview changes", disabled: true });
+  const btns = el("div", { className: "changes-actions" }, btn);
+  if (!target) {
+    btn.remove();
+    btns.append(el("small", { className: "muted", textContent: "Upload the original PDF or Word file to apply these changes." }));
   }
-  card.append(head, list, btns);
+  const card = el("div", { className: "changes" },
+    el("div", { className: "changes-head", textContent: `${changes.length} ${changes.length === 1 ? "change" : "changes"} to your original file` }),
+    el("ol", {}, ...rows.map((r) => r.li)), btns);
   textEl.append(card);
+  if (!target) return;
+
+  checkChanges(target, changes, setStatus).finally(() => { btn.disabled = false; });
+
+  btn.addEventListener("click", async () => {
+    const idx = changes.map((_, i) => i).filter((i) => rows[i].box.checked);
+    if (!idx.length) { toast("Select at least one change."); return; }
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = "Preparing preview…";
+    try {
+      const { bytes, report } = await editOriginal(target, idx.map((i) => changes[i]));
+      report.forEach((r) => {
+        const i = idx[r.index];
+        if (r.ok) setStatus(i, "ok", r.note ? `Ready, ${r.note}.` : "Ready.");
+        else setStatus(i, "fail", `Can't be applied: ${r.reason}.`);
+      });
+      const ok = report.filter((r) => r.ok);
+      if (!ok.length) { toast("None of the changes could be applied. See the list for details."); return; }
+      const views = target.kind === "pdf"
+        ? await pdfPreview(target.original, bytes, ok.map((r) => r.mark).filter(Boolean), false)
+        : await docxPreview(target.original, bytes, ok.map((r) => changes[idx[r.index]].replace));
+      const name = target.name.replace(/(\.[^.]+)$/, "_edited$1");
+      const dl = el("button", { type: "button", className: "primary", textContent: `Download ${name}` });
+      dl.addEventListener("click", () => { saveBlob(new Blob([bytes], { type: MIME[target.kind] }), name); toast("Your edited file is downloading."); });
+      const failed = report.length - ok.length;
+      openModal("Preview of your edited file",
+        previewView(views, failed ? `${ok.length} of ${report.length} changes applied.` : "Changed text is highlighted."),
+        [el("button", { type: "button", className: "ghost", textContent: "Back", onclick: closeModal }), dl]);
+    } catch (err) {
+      console.error(err);
+      toast(String(err?.message || "Could not edit this file."));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  });
+}
+
+// ---- remove personal data
+
+async function documentText(d) {
+  if (d.kind !== "pdf") return d.text;
+  const mupdf = await loadMupdf();
+  const doc = mupdf.Document.openDocument(d.original, "application/pdf");
+  const parts = [];
+  for (let p = 0; p < doc.countPages(); p++) parts.push(doc.loadPage(p).toStructuredText().asText());
+  return parts.join("\n");
+}
+
+async function openRedaction(d) {
+  const status = el("p", { className: "muted", textContent: "Looking for personal data…" });
+  const groups = el("div", { className: "pii-groups" });
+  const add = el("input", { type: "text", id: "pii-add", placeholder: "Add a word or name to remove", maxLength: 200 });
+  const addBtn = el("button", { type: "button", className: "ghost", textContent: "Add" });
+  const preview = el("button", { type: "button", className: "primary", textContent: "Preview redaction", disabled: true });
+  openModal(`Remove personal data from ${d.name}`,
+    [el("p", { className: "small muted", textContent: "Everything you tick is blacked out and removed from the file itself, not just hidden. The author and other hidden properties are wiped too. Automatic detection can miss things, so check the preview and add anything that is still visible." }),
+     status, groups, el("div", { className: "pii-add" }, add, addBtn)],
+    [el("button", { type: "button", className: "ghost", textContent: "Cancel", onclick: closeModal }), preview]);
+
+  const items = [];
+  const groupEls = new Map();
+  const addItem = (type, value, checked = true) => {
+    if (items.some((x) => x.value === value)) return;
+    if (!groupEls.has(type)) {
+      const list = el("ul", {});
+      const g = el("fieldset", { className: "pii-group" }, el("legend", { textContent: PII_LABELS[type] || type }), list);
+      groupEls.set(type, list);
+      groups.append(g);
+    }
+    const id = `pii-${items.length}-${Date.now()}`;
+    const box = el("input", { type: "checkbox", checked, id });
+    groupEls.get(type).append(el("li", {}, box, el("label", { htmlFor: id, textContent: value })));
+    items.push({ type, value, box });
+    preview.disabled = false;
+  };
+  const doAdd = () => { const v = add.value.trim(); if (v) { addItem("custom", v); add.value = ""; add.focus(); } };
+  addBtn.addEventListener("click", doAdd);
+  add.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
+
+  let text = "";
+  try {
+    text = await documentText(d);
+    for (const f of detectPII(text)) addItem(f.type, f.value);
+    if (state.engine) {
+      status.textContent = "Looking for names and addresses with the AI…";
+      try {
+        const answer = await askModel(piiPrompt(text.slice(0, FULL_DOC_CHARS)), 500);
+        for (const f of parsePiiAnswer(answer, text)) addItem(f.type, f.value);
+      } catch (err) { console.error(err); }
+    }
+    status.textContent = items.length
+      ? `Found ${items.length} ${items.length === 1 ? "item" : "items"}. Untick anything that should stay.`
+      : "No personal data found automatically. Add words to remove below.";
+    if (!state.engine) status.textContent += " Load a model to also find names and addresses.";
+  } catch (err) {
+    console.error(err);
+    status.textContent = "Could not read this file.";
+  }
+
+  preview.addEventListener("click", async () => {
+    const terms = items.filter((x) => x.box.checked).map((x) => x.value);
+    if (!terms.length) { toast("Select at least one item."); return; }
+    preview.disabled = true;
+    preview.textContent = "Redacting…";
+    try {
+      let bytes, views, counts;
+      if (d.kind === "pdf") {
+        const mupdf = await loadMupdf();
+        const r = redactPdf(mupdf, d.original, terms);
+        bytes = r.bytes; counts = r.counts;
+        views = await pdfPreview(d.original, bytes, r.marks, true);
+      } else {
+        const r = await redactDocx(window.JSZip, d.original, terms);
+        bytes = r.bytes; counts = r.counts;
+        views = await docxPreview(d.original, bytes, ["███"]);
+      }
+      const total = counts.reduce((a, b) => a + b, 0);
+      const missed = terms.filter((_, i) => !counts[i]);
+      const name = d.name.replace(/(\.[^.]+)$/, "_redacted$1");
+      const dl = el("button", { type: "button", className: "primary", textContent: `Download ${name}` });
+      dl.addEventListener("click", () => { saveBlob(new Blob([bytes], { type: MIME[d.kind] }), name); toast("Your redacted file is downloading."); });
+      openModal(`Preview: ${d.name} without personal data`,
+        previewView(views, `${total} ${total === 1 ? "place" : "places"} removed.` + (missed.length ? ` Not found in the file: ${missed.join(", ")}.` : "")),
+        [el("button", { type: "button", className: "ghost", textContent: "Back", onclick: () => { closeModal(); openRedaction(d); } }), dl]);
+    } catch (err) {
+      console.error(err);
+      toast("Could not redact this file.");
+      preview.disabled = false;
+      preview.textContent = "Preview redaction";
+    }
+  });
 }
 
 // ------------------------------------------------------------------ chat

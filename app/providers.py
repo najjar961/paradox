@@ -159,9 +159,25 @@ class ChatModel:
             elif data.get("type") == "error":
                 raise ProviderError("Model error: " + str(data.get("error"))[:200])
 
+    async def complete(self, system: str, messages: list[dict]) -> str:
+        """The whole answer as one string (used for checks that need no streaming)."""
+        parts = []
+        async for piece in self.stream(system, messages):
+            parts.append(piece)
+        return "".join(parts).strip()
+
     async def _echo(self, system, messages):
         """Offline stub for tests and UI demos: reports what it was given."""
         last = messages[-1]["content"] if messages else ""
+        if "find personal data" in system:
+            m = re.search(r"<document>\n(.*?)</document>", last, re.S)
+            lines = [l.strip() for l in (m.group(1) if m else "").splitlines() if l.strip()]
+            yield f"NAME: {lines[0]}" if lines else "NONE"
+            return
+        if "correct FIND" in system:
+            pairs = re.findall(r"Closest text in the document: (.+)\nYour REPLACE: (.*)", last)
+            yield "\n\n".join(f"FIND: {a}\nREPLACE: {a.upper()}" for a, _ in pairs)
+            return
         n_sources = last.count("<source id=")
         question = last.rsplit("My request: ", 1)[-1]
         if "Layout mode is ON" in system and "<source" in last:

@@ -402,3 +402,91 @@ def test_punctuation_outside_the_change_is_kept():
     buf = io.BytesIO(); d.save(buf)
     out, _ = apply_docx(buf.getvalue(), [{"find": "Gehalt von 3.900 Euro", "replace": "Gehalt von 4.250 Euro"}])
     assert Docx(io.BytesIO(out)).paragraphs[0].text == "Gehalt von 4.250 Euro, zahlbar zum Monatsende."
+
+
+# ---------------------------------------------------------------- round 1: checking, preview, redaction
+
+def _pii_pdf() -> bytes:
+    import pymupdf
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_textbox(pymupdf.Rect(72, 72, 520, 300),
+                        "Lena Becker\nBergstraße 7, 64283 Darmstadt\nE-Mail: lena.becker@example.de\n"
+                        "IBAN DE89 3704 0044 0532 0130 00\nTelefon: +49 6151 123 4567", fontsize=11, fontname="helv")
+    doc.set_metadata({"author": "Lena Becker", "title": "Bewerbung"})
+    return doc.tobytes()
+
+
+def test_detect_pii_patterns():
+    from app.privacy import detect_pii
+    found = {(i["type"], i["value"]) for i in detect_pii(
+        "Frau Dr. Anna Schulz, Bergstraße 7, 64283 Darmstadt. Mail anna@example.de, Tel. +49 69 1234 5678, "
+        "IBAN DE89 3704 0044 0532 0130 00, geboren am 12.04.1994. Rechnung vom 14.10.2026 über 12000 Euro.")}
+    assert ("name", "Anna Schulz") in found and ("email", "anna@example.de") in found
+    assert ("iban", "DE89 3704 0044 0532 0130 00") in found and ("phone", "+49 69 1234 5678") in found
+    assert ("birthdate", "12.04.1994") in found and ("address", "Bergstraße 7, 64283 Darmstadt") in found
+    assert not any("14.10.2026" in v or "12000" in v for _, v in found)  # ordinary dates and amounts stay
+
+
+def test_redaction_really_removes_text_and_metadata():
+    import pymupdf
+    from app.privacy import redact_pdf
+    out, counts, marks = redact_pdf(_pii_pdf(), ["Lena Becker", "lena.becker@example.de", "DE89 3704 0044 0532 0130 00"])
+    assert counts == [1, 1, 1] and len(marks) == 3
+    doc = pymupdf.open(stream=out, filetype="pdf")
+    text = doc[0].get_text()
+    assert "Lena" not in text and "lena.becker" not in text and "DE89" not in text
+    assert "Darmstadt" in text  # not selected, so it stays
+    assert doc.metadata["author"] == "" and doc.metadata["title"] == ""
+
+
+def test_pii_and_redact_endpoints(app):
+    c = login(app, "alice")
+    ws = c.get("/api/workspaces").json()[0]
+    pdf = upload(c, ws["id"], "cv.pdf", _pii_pdf()).json()
+    res = c.post(f"/api/workspaces/{ws['id']}/documents/{pdf['id']}/pii", json={}).json()
+    values = {i["value"] for i in res["items"]}
+    assert "lena.becker@example.de" in values and "Lena Becker" in values  # pattern + model (echo returns line 1)
+    r = c.post(f"/api/workspaces/{ws['id']}/documents/{pdf['id']}/redact", json={"terms": sorted(values)}).json()
+    assert r["filename"] == "cv_redacted.pdf" and sum(r["counts"]) >= 4
+    assert r["preview"]["kind"] == "pdf" and r["preview"]["after"][0]["png"]
+    import base64, pymupdf
+    assert "lena.becker" not in pymupdf.open(stream=base64.b64decode(r["file"]), filetype="pdf")[0].get_text()
+
+
+def test_preview_endpoint_and_docx_preview(app):
+    c = login(app, "alice")
+    ws = c.get("/api/workspaces").json()[0]
+    pdf = upload(c, ws["id"], "angebot.pdf", _sample_pdf()).json()
+    r = c.post(f"/api/workspaces/{ws['id']}/documents/{pdf['id']}/preview",
+               json={"changes": [{"find": "4.800,00 EUR", "replace": "4.350,00 EUR"}]}).json()
+    assert r["report"][0]["ok"] and r["report"][0]["mark"]["page"] == 0
+    assert r["preview"]["marks"] and r["preview"]["after"] and r["preview"]["before"]
+    docx = upload(c, ws["id"], "brief.docx", _sample_docx()).json()
+    r = c.post(f"/api/workspaces/{ws['id']}/documents/{docx['id']}/preview",
+               json={"changes": [{"find": "24 Monate", "replace": "36 Monate"}]}).json()
+    assert "36 Monate" in r["preview"]["after_html"] and "24 Monate" in r["preview"]["before_html"]
+
+
+def test_chat_checks_changes_and_repairs_them(app):
+    c = login(app, "alice")
+    ws = c.get("/api/workspaces").json()[0]
+    upload(c, ws["id"], "angebot.pdf", _sample_pdf())
+
+    async def paraphrasing(system, messages):
+        if "correct FIND" in system:  # the repair round: answer with the document's real wording
+            yield "FIND: Grundgebühr: 4.800,00 EUR\nREPLACE: Grundgebühr: 4.350,00 EUR"
+            return
+        yield ("I changed two things.\n\nFIND: Angebot Nr. 2026-118\nREPLACE: Angebot Nr. 2026-119\n\n"
+               "FIND: Grundgebühr beträgt 4.800 EUR\nREPLACE: Grundgebühr beträgt 4.350 EUR")
+
+    original = app.state.chat.stream
+    app.state.chat.stream = paraphrasing
+    try:
+        r = c.post(f"/api/workspaces/{ws['id']}/chat", json={"message": "x", "keep_layout": True})
+    finally:
+        app.state.chat.stream = original
+    ev = [json.loads(l) for l in r.text.splitlines() if l.strip()]
+    changes = next(e for e in ev if e["type"] == "changes")["changes"]
+    assert changes[0]["status"] == "ok"
+    assert changes[1]["status"] == "fixed" and changes[1]["find"] == "Grundgebühr: 4.800,00 EUR"

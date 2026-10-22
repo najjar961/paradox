@@ -254,9 +254,13 @@ async function applyPdfChange(mupdf, doc, change, ctx) {
   const full = blockRects.slice(0, -1).filter((r) => Math.abs(r.x1 - bx1) < 2 && Math.abs(r.x0 - bx0) < 2);
   const lastR = blockRects[blockRects.length - 1];
   const pageW = page.getBounds()[2] - page.getBounds()[0];
+  // The column's right edge: the furthest any line starting at this paragraph's left edge reaches.
+  const sameColumn = [...rects.values()].filter((r) => Math.abs(r.x0 - bx0) < 2);
+  const columnRight = Math.max(...sameColumn.map((r) => r.x1));
+  const atColumnRight = sameColumn.filter((r) => Math.abs(r.x1 - columnRight) < 2).length;
   const justified = (blockRects.length > 2 && lefts && full.length === blockRects.length - 1 && lastR.x1 < bx1 - 0.05 * (bx1 - bx0))
-    || (blockRects.length === 2 && lefts && Math.abs(blockRects[0].x1 - bx1) < 2 && lastR.x1 < bx1 - 0.05 * (bx1 - bx0)
-      && blockRects[0].x1 - blockRects[0].x0 > pageW * 0.5);
+    || (blockRects.length === 2 && lefts && Math.abs(blockRects[0].x1 - columnRight) < 2 && atColumnRight >= 2
+      && lastR.x1 < bx1 - 0.05 * (bx1 - bx0) && blockRects[0].x1 - blockRects[0].x0 > pageW * 0.5);
   const lastIsParaEnd = blockLines.indexOf(last) === blockLines.length - 1;
   let align = "left";
   if (!justified) {
@@ -388,6 +392,7 @@ async function applyPdfChange(mupdf, doc, change, ctx) {
   ops.push("ET Q");
   ctx.appendContent(doc, page, ops.join("\n"));
   if (s < size * 0.92) change._note = "set in a smaller size so it fits the original space";
+  change._mark = { page: pno, rect: [area.x0, area.y0, area.x1, Math.max(area.y1, y - step + s * 0.3)] };
   return null;
 }
 
@@ -462,7 +467,7 @@ export async function applyPdf(mupdf, bytes, changes, { loadFont } = {}) {
     let err;
     try { err = await applyPdfChange(mupdf, doc, ch, ctx); }
     catch (e) { console.error(e); err = "could not be applied"; }
-    report.push({ index: i, ok: !err, reason: err || null, note: ch._note || null });
+    report.push({ index: i, ok: !err, reason: err || null, note: ch._note || null, mark: ch._mark || null });
   }
   const out = doc.saveToBuffer("garbage=compact,compress").asUint8Array().slice();
   doc.destroy?.();
@@ -566,4 +571,232 @@ export async function applyDocx(JSZip, bytes, changes, xml = { DOMParser: global
   });
   for (const n of names) zip.file(n, new xml.XMLSerializer().serializeToString(docs[n]));
   return { bytes: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), report };
+}
+
+
+// ------------------------------------------------------------------ checking changes
+
+// Words of a text with their character offsets, for mapping matches back to the original wording.
+function wordSpans(text) {
+  const out = [];
+  for (const m of text.matchAll(/\S+/g)) {
+    const t = norm(m[0]);
+    if (t) out.push({ t, start: m.index, end: m.index + m[0].length });
+  }
+  return out;
+}
+
+// Is this FIND text in the document? Returns "exact", "close" or null.
+export function locate(docText, find) {
+  const words = wordSpans(docText);
+  const needle = tokens(find);
+  if (!needle.length) return null;
+  const hay = words.map((w) => w.t);
+  const span = findSpan(hay, needle);
+  if (!span) return null;
+  const exact = span[1] - span[0] === needle.length && needle.every((t, k) => hay[span[0] + k] === t);
+  return exact ? "exact" : "close";
+}
+
+// The passage of the document that looks most like `find`, in the document's own words.
+export function closestPassage(docText, find) {
+  const words = wordSpans(docText);
+  const needle = tokens(find);
+  const n = needle.length;
+  if (!n || !words.length) return null;
+  const set = new Set(needle);
+  let best = 0, span = null;
+  for (const len of [n - 2, n - 1, n, n + 1, n + 2, n + 4]) {
+    if (len < 1) continue;
+    for (let i = 0; i + len <= words.length; i++) {
+      let hits = 0;
+      for (let k = i; k < i + len; k++) if (set.has(words[k].t)) hits++;
+      if (hits / Math.max(len, n) <= best * 0.9) continue;
+      const r = (2 * lcs(words.slice(i, i + len).map((w) => w.t), needle)) / (len + n);
+      if (r > best) { best = r; span = [i, i + len]; }
+    }
+  }
+  if (!span || best < 0.35) return null;
+  return { text: docText.slice(words[span[0]].start, words[span[1] - 1].end), score: best };
+}
+
+// ------------------------------------------------------------------ personal data
+
+function ibanValid(raw) {
+  const s = raw.replace(/\s+/g, "").toUpperCase();
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(s)) return false;
+  const r = (s.slice(4) + s.slice(0, 4)).replace(/[A-Z]/g, (c) => String(c.charCodeAt(0) - 55));
+  let m = 0;
+  for (const d of r) m = (m * 10 + Number(d)) % 97;
+  return m === 1;
+}
+
+function luhn(raw) {
+  const d = raw.replace(/\D/g, "");
+  if (d.length < 13 || d.length > 19) return false;
+  let sum = 0;
+  for (let i = 0; i < d.length; i++) {
+    let x = Number(d[d.length - 1 - i]);
+    if (i % 2) { x *= 2; if (x > 9) x -= 9; }
+    sum += x;
+  }
+  return sum % 10 === 0;
+}
+
+const PII_RULES = [
+  { type: "email", re: /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+/gu },
+  { type: "iban", re: /\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,4})?\b/g, check: ibanValid },
+  { type: "card", re: /\b\d(?:[ -]?\d){12,18}\b/g, check: luhn },
+  { type: "phone", re: /(?:(?:\+|00)\d{1,3}[\s./-]?(?:\(0\)[\s./-]?)?|\b0)\d{2,5}(?:[\s./-]?\d{2,8}){1,4}\b/g,
+    check: (v) => { const n = v.replace(/\D/g, "").length; return n >= 7 && n <= 15 && !/^\d{1,2}\.\d{1,2}\.\d{2,4}$/.test(v.trim()); } },
+  { type: "birthdate", re: /(?:geb(?:oren)?\.?(?:\s+am)?|Geburtsdatum:?|date of birth:?|born(?:\s+on)?|DOB:?|né(?:e)? le)\s*(\d{1,2}[./-]\s?\d{1,2}[./-]\s?\d{2,4}|\d{1,2}\.?\s+\p{L}+\s+\d{4})/giu, group: 1 },
+  { type: "id", re: /(?:Steuer-?ID|Steuer-?Identifikationsnummer|Steuernummer|Sozialversicherungsnummer|SV-Nummer|Personalausweis(?:nummer)?|Ausweisnummer|Reisepass(?:nummer)?|Passport(?: No\.?| number)?|Tax ID|Social Security(?: Number)?|SSN|Versichertennummer|Personalnummer)\s*[:#]?\s*([A-Z0-9][A-Z0-9 /-]{4,24}[A-Z0-9])/giu, group: 1 },
+];
+
+// Names after a salutation or a "Name:" label, and street addresses / postcodes with a city.
+const NAME_WORD = "\\p{Lu}\\p{Ll}+(?:['’-]\\p{Lu}?\\p{Ll}+)*";
+PII_RULES.push(
+  { type: "name", re: new RegExp(`(?:\\b(?:Frau|Herrn?|Hr\\.|Fr\\.|Dr\\.|Prof\\.|Mr\\.?|Mrs\\.?|Ms\\.?|Mme|M\\.|Madame|Monsieur)\\s+(?:(?:Dr|Prof)\\.\\s+)?)(${NAME_WORD}(?:[ -]${NAME_WORD}){0,2})`, "gu"), group: 1 },
+  { type: "name", re: new RegExp(`(?:\\b(?:Name|Vorname|Nachname|Ansprechpartner(?:in)?|Contact|Nom)\\s*:\\s*)(${NAME_WORD}(?:[ -]${NAME_WORD}){0,3})`, "gu"), group: 1 },
+  { type: "address", re: /\p{Lu}[\p{L}.-]*(?:straße|strasse|str\.|weg|gasse|platz|allee|ring|damm|ufer|chaussee|steig|pfad|street|st\.|road|avenue|lane|rue)\s+\d+\s?[a-zA-Z]?(?:\s*[,\n]\s*\d{5}\s+\p{Lu}[\p{L}-]+(?:\s(?:am|an der|im|in der)\s\p{Lu}[\p{L}-]+)?)?/gu },
+  { type: "address", re: /\b\d{5}\s+\p{Lu}[\p{L}-]+(?:\s(?:am|an der|im|in der)\s\p{Lu}[\p{L}-]+)?/gu,
+    check: (v) => !/^\d{5}\s+(?:Euro|EUR|Stück|Mitarbeiter|Kunden)/.test(v) },
+);
+
+export const PII_LABELS = {
+  name: "Names", address: "Addresses", email: "Email addresses", phone: "Phone numbers", iban: "Bank accounts (IBAN)",
+  card: "Card numbers", birthdate: "Dates of birth", id: "ID and tax numbers", custom: "Your own words",
+};
+
+// Pattern-based detection: exact strings as they appear in the text.
+export function detectPII(text) {
+  const found = new Map();
+  for (const rule of PII_RULES) {
+    for (const m of text.matchAll(rule.re)) {
+      const v = (rule.group ? m[rule.group] : m[0]).trim().replace(/[.,;:]+$/, "");
+      if (!v || (rule.check && !rule.check(v))) continue;
+      if (rule.type === "phone" && [...found.values()].some((f) => (f.type === "iban" || f.type === "card") && f.value.includes(v))) continue;
+      if (!found.has(v)) found.set(v, { type: rule.type, value: v });
+    }
+  }
+  // Drop items already covered by a longer item (e.g. "64283 Darmstadt" inside a full address).
+  const all = [...found.values()];
+  return all.filter((a) => !all.some((b) => b !== a && b.value.length > a.value.length && b.value.includes(a.value)));
+}
+
+// Prompt that asks the model for names and addresses; the answer is checked against the text.
+export function piiPrompt(text) {
+  return [
+    { role: "system", content: "You find personal data in documents. Reply only with lines in the format TYPE: exact text. TYPE is NAME (a person's name) or ADDRESS (a street address with house number, or a postcode with city). Copy each item exactly as written in the document. Do not list company names, job titles or dates. If there is nothing, reply NONE." },
+    { role: "user", content: `Document:\n<document>\n${text}\n</document>\n\nList every person's name and every address in this document.` },
+  ];
+}
+
+export function parsePiiAnswer(answer, text) {
+  const out = [];
+  for (const line of answer.split("\n")) {
+    const m = /^\s*[-*]?\s*(NAME|ADDRESS)\s*:\s*(.+?)\s*$/i.exec(line);
+    if (!m) continue;
+    const value = m[2].replace(/^["'„“]|["'“”]$/g, "").trim();
+    // Only keep what is really in the document, word for word.
+    if (value.length > 2 && text.includes(value)) out.push({ type: m[1].toLowerCase() === "name" ? "name" : "address", value });
+  }
+  return out;
+}
+
+function caseVariants(term) {
+  const v = new Set([term]);
+  if (/\p{L}/u.test(term)) {
+    v.add(term.toLowerCase());
+    v.add(term.toUpperCase());
+    v.add(term.replace(/\p{L}+/gu, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase()));
+  }
+  return [...v];
+}
+
+// Black out every occurrence of each term for real, and wipe the document's metadata.
+export function redactPdf(mupdf, bytes, terms) {
+  const doc = mupdf.Document.openDocument(bytes, "application/pdf");
+  const counts = terms.map(() => 0);
+  const marks = [];
+  for (let p = 0; p < doc.countPages(); p++) {
+    const page = doc.loadPage(p);
+    let any = false;
+    const seen = new Set();
+    terms.forEach((term, i) => {
+      for (const variant of caseVariants(term)) {
+        for (const hit of page.search(variant)) {
+          const key = hit.map((q) => q.map(Math.round).join(",")).join("|");
+          if (seen.has(key)) continue;
+          seen.add(key);
+          for (const q of hit) {
+            const xs = [q[0], q[2], q[4], q[6]], ys = [q[1], q[3], q[5], q[7]];
+            const r = [Math.min(...xs) - 0.5, Math.min(...ys) - 0.5, Math.max(...xs) + 0.5, Math.max(...ys) + 0.5];
+            page.createAnnotation("Redact").setRect(r);
+            marks.push({ page: p, rect: r });
+          }
+          counts[i]++;
+          any = true;
+        }
+      }
+    });
+    // black boxes, blank out image pixels under them, keep line art, remove the text
+    if (any) page.applyRedactions(true, 2, 0, 0);
+  }
+  for (const key of ["info:Title", "info:Author", "info:Subject", "info:Keywords", "info:Creator", "info:Producer"]) {
+    try { doc.setMetaData(key, ""); } catch { /* not present */ }
+  }
+  try {
+    const root = doc.getTrailer().get("Root");
+    if (!root.isNull() && !root.get("Metadata").isNull()) root.delete("Metadata");
+  } catch { /* no XMP */ }
+  const out = doc.saveToBuffer("garbage=compact,compress,clean").asUint8Array().slice();
+  return { bytes: out, counts, marks };
+}
+
+export async function redactDocx(JSZip, bytes, terms, xml = { DOMParser: globalThis.DOMParser, XMLSerializer: globalThis.XMLSerializer }) {
+  const zip = await JSZip.loadAsync(bytes);
+  const names = Object.keys(zip.files).filter((n) => /^word\/(document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/.test(n));
+  const counts = terms.map(() => 0);
+  for (const n of names) {
+    const dom = new xml.DOMParser().parseFromString(await zip.file(n).async("string"), "application/xml");
+    for (const p of list(dom.getElementsByTagNameNS(W, "p"))) {
+      terms.forEach((term, i) => {
+        for (;;) {
+          const [ts, text] = paraText(p);
+          const at = text.toLowerCase().indexOf(term.toLowerCase());
+          if (at < 0) break;
+          replaceRange(ts, at, at + term.length, "\u2588".repeat(Math.max(3, Math.min(term.length, 12))));
+          counts[i]++;
+        }
+      });
+    }
+    zip.file(n, new xml.XMLSerializer().serializeToString(dom));
+  }
+  // Document properties often name the author and company.
+  for (const n of ["docProps/core.xml", "docProps/app.xml", "docProps/custom.xml"]) {
+    const f = zip.file(n);
+    if (!f) continue;
+    let x = await f.async("string");
+    x = x.replace(/<((?:dc:creator|cp:lastModifiedBy|Company|Manager|dc:title|dc:subject|cp:keywords|dc:description))>[^<]*<\/\1>/g, "<$1></$1>");
+    if (n === "docProps/custom.xml") x = x.replace(/<vt:lpwstr>[^<]*<\/vt:lpwstr>/g, "<vt:lpwstr></vt:lpwstr>");
+    zip.file(n, x);
+  }
+  return { bytes: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), counts };
+}
+
+// ------------------------------------------------------------------ preview
+
+// PNG images of the given pages, with optional highlight rectangles in page coordinates.
+export function renderPages(mupdf, bytes, pages, scale = 1.6) {
+  const doc = mupdf.Document.openDocument(bytes, "application/pdf");
+  const out = [];
+  for (const p of pages) {
+    if (p < 0 || p >= doc.countPages()) continue;
+    const page = doc.loadPage(p);
+    const b = page.getBounds();
+    const pm = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false, true);
+    out.push({ page: p, png: pm.asPNG().slice(), width: b[2] - b[0], height: b[3] - b[1] });
+  }
+  return out;
 }

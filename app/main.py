@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import json
 import re
@@ -18,7 +19,7 @@ from pydantic import BaseModel, Field
 from .auth import LoginLimiter, UserDirectory
 from .config import Settings, load_settings
 from .export import clean_text, to_docx, to_pdf
-from . import layout_edit
+from . import layout_edit, privacy
 from .ingest import IngestError, chunk_text, extension, extract_text, SUPPORTED
 from .providers import ChatModel, Embedder, ProviderError
 from .rag import build_system_prompt, build_user_message, citations, document_citations
@@ -62,6 +63,10 @@ class ChangeIn(BaseModel):
 
 class ApplyIn(BaseModel):
     changes: list[ChangeIn] = Field(min_length=1, max_length=50)
+
+
+class RedactIn(BaseModel):
+    terms: list[str] = Field(min_length=1, max_length=200)
 
 
 class ExportIn(BaseModel):
@@ -298,6 +303,60 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "Access-Control-Expose-Headers": "X-Paradox-Report",
         })
 
+    def _editable(ws: Workspace, doc_id: str):
+        doc = ws.documents.get(doc_id)
+        original = ws.originals.get(doc_id)
+        if doc is None or original is None:
+            raise HTTPException(404, "Only PDF and Word files can be edited or redacted.")
+        return doc, original
+
+    def _file_json(doc, data: bytes, suffix: str, extra: dict) -> dict:
+        stem = re.sub(r"[^\w\-. ]", "_", doc.name.rsplit(".", 1)[0]).strip(" ._") or "document"
+        return {"filename": f"{stem}_{suffix}.{doc.kind}", "file": base64.b64encode(data).decode(), **extra}
+
+    @app.post("/api/workspaces/{ws_id}/documents/{doc_id}/preview")
+    async def preview_changes(doc_id: str, body: ApplyIn, ws: Workspace = Depends(workspace)):
+        """Apply the changes in memory and return the edited file plus page previews."""
+        doc, original = _editable(ws, doc_id)
+        changes = [c.model_dump() for c in body.changes]
+        try:
+            data, report = await asyncio.to_thread(layout_edit.apply, doc.kind, original, changes)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        marks = [r["mark"] for r in report if r.get("ok") and r.get("mark")]
+        pv = await asyncio.to_thread(privacy.preview, doc.kind, original, data, marks)
+        highlight = [c["replace"] for c, r in zip(changes, report) if r["ok"]]
+        return _file_json(doc, data, "edited", {"report": report, "preview": pv, "highlight": highlight})
+
+    @app.post("/api/workspaces/{ws_id}/documents/{doc_id}/pii")
+    async def find_personal_data(doc_id: str, request: Request, ws: Workspace = Depends(workspace)):
+        """Personal data found by patterns, plus names and addresses found by the model (checked against the text)."""
+        doc, original = _editable(ws, doc_id)
+        text = await asyncio.to_thread(privacy.pdf_text, original) if doc.kind == "pdf" else ws.texts[doc_id]
+        items = privacy.detect_pii(text)
+        model_used = False
+        try:
+            reply = await request.app.state.chat.complete(privacy.PII_SYSTEM, [{"role": "user",
+                                                          "content": privacy.pii_user_prompt(text[:s.full_doc_chars])}])
+            known = {i["value"] for i in items}
+            items += [i for i in privacy.parse_pii_answer(reply, text) if i["value"] not in known]
+            model_used = True
+        except ProviderError:
+            pass
+        return {"items": items, "model_used": model_used}
+
+    @app.post("/api/workspaces/{ws_id}/documents/{doc_id}/redact")
+    async def redact(doc_id: str, body: RedactIn, ws: Workspace = Depends(workspace)):
+        """Remove the given terms for real (PDF redaction / Word replacement) and wipe metadata. Nothing is kept."""
+        doc, original = _editable(ws, doc_id)
+        terms = [t.strip() for t in body.terms if t.strip()]
+        if doc.kind == "pdf":
+            data, counts, marks = await asyncio.to_thread(privacy.redact_pdf, original, terms)
+        else:
+            (data, counts), marks = await asyncio.to_thread(privacy.redact_docx, original, terms), []
+        pv = await asyncio.to_thread(privacy.preview, doc.kind, original, data, marks)
+        return _file_json(doc, data, "redacted", {"counts": counts, "preview": pv, "highlight": ["\u2588\u2588\u2588"]})
+
     @app.delete("/api/workspaces/{ws_id}/documents/{doc_id}")
     async def remove_document(doc_id: str, ws: Workspace = Depends(workspace)):
         if not ws.remove(doc_id):
@@ -336,6 +395,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         messages = [*history, {"role": "user", "content": user_msg}]
         model: ChatModel = request.app.state.chat
 
+        async def check_changes(answer: str):
+            """Verify every FIND exists in an editable document; ask the model once to fix the rest."""
+            changes = layout_edit.parse_changes(answer)
+            if not changes:
+                return None
+            docs = [d for d in ws.documents.values() if d.id in ws.originals]
+            if not docs:
+                return {"doc_id": None, "changes": [{**c, "status": "fail", "message": "No editable file."} for c in changes]}
+            target = max(docs, key=lambda d: sum(bool(privacy.locate(ws.texts[d.id], c["find"])) for c in changes))
+            text = ws.texts[target.id]
+            out = []
+            missing = []
+            for c in changes:
+                where = privacy.locate(text, c["find"])
+                if where:
+                    out.append({**c, "status": "ok", "message": "Found in your document." if where == "exact"
+                                else "Found in your document (wording differs slightly)."})
+                else:
+                    near = privacy.closest_passage(text, c["find"])
+                    out.append({**c, "status": "fail", "message": "This text isn't in your document."})
+                    if near:
+                        missing.append((len(out) - 1, near))
+            if missing:
+                try:
+                    reply = await model.complete(privacy.REPAIR_SYSTEM, [{"role": "user", "content": privacy.repair_prompt(
+                        [(changes[i], near) for i, near in missing])}])
+                    fixed = layout_edit.parse_changes(reply)
+                except ProviderError:
+                    fixed = []
+                for k, (i, _) in enumerate(missing):
+                    f = fixed[k] if k < len(fixed) else None
+                    if f and privacy.locate(text, f["find"]):
+                        out[i] = {**f, "status": "fixed", "message": "Corrected to match your document."}
+            return {"doc_id": target.id, "changes": out}
+
         async def events():
             yield json.dumps({"type": "sources", "sources": sources}) + "\n"
             answer: list[str] = []
@@ -357,6 +451,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     text = "".join(answer) + ("" if finished else "\n\n[stopped]")
                     ws.history.append({"role": "user", "content": question})
                     ws.history.append({"role": "assistant", "content": text})
+            if finished and layout:
+                checked = await check_changes("".join(answer))
+                if checked is not None:
+                    yield json.dumps({"type": "changes", **checked}) + "\n"
             if finished:
                 yield json.dumps({"type": "done"}) + "\n"
 

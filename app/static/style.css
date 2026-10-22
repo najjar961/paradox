@@ -165,3 +165,49 @@ hr.sep { border: 0; border-top: 1px dashed var(--border); margin: 12px 0; }
 .changes-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .changes-actions button { font-size: 13.5px; padding: 8px 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 860px) { .layout-row { padding: 0 16px; } }
+
+/* Document tools */
+.doc-list li.doc-item { display: grid; gap: 4px; align-items: stretch; }
+.doc-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.doc-tools { display: flex; gap: 10px; padding: 0 4px; }
+.link-btn { padding: 2px 0; font-size: 12.5px; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; background: none; border: 0; }
+.link-btn:hover { color: var(--text); }
+
+/* Modal */
+body.modal-open { overflow: hidden; }
+.modal { position: fixed; inset: 0; z-index: 20; background: rgba(10, 14, 12, .55); display: grid; place-items: center; padding: 24px max(16px, env(safe-area-inset-left, 0px)); }
+.modal-box { background: var(--bg); color: var(--text); width: min(980px, 100%); max-height: calc(100vh - 48px); border-radius: 16px; display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.35); }
+.modal-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.modal-head h2 { margin: 0; font-size: 16px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal-body { overflow: auto; padding: 16px 18px; display: grid; gap: 12px; align-content: start; min-height: 0; }
+.modal-body p { margin: 0; }
+.modal-foot { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; padding: 12px 18px; border-top: 1px solid var(--border); background: var(--surface); }
+.modal-foot button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Preview */
+.pv-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; position: sticky; top: -16px; background: var(--bg); padding: 4px 0 8px; z-index: 1; }
+.segs { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+.seg { border-radius: 0; padding: 6px 14px; font-size: 13.5px; background: var(--surface); }
+.seg[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.pv-stage { display: grid; gap: 16px; justify-items: center; }
+.pv-page { position: relative; width: min(760px, 100%); background: #fff; box-shadow: 0 6px 24px rgba(0,0,0,.15); }
+.pv-page img { display: block; width: 100%; height: auto; }
+.pv-mark { position: absolute; outline: 2.5px solid #2f9e7a; background: rgba(47, 158, 122, .14); border-radius: 3px; pointer-events: none; }
+.pv-black { outline-color: #e0715c; background: transparent; }
+.pv-num { position: absolute; right: 8px; bottom: 6px; font: 11px var(--mono); color: #6b6862; background: rgba(255,255,255,.85); padding: 1px 6px; border-radius: 6px; }
+.pv-docx { width: min(760px, 100%); background: #fff; color: #1d1c1a; padding: 40px 48px; box-shadow: 0 6px 24px rgba(0,0,0,.15); font: 14px/1.55 Calibri, Carlito, var(--sans); overflow-wrap: anywhere; }
+.pv-docx table { border-collapse: collapse; } .pv-docx td, .pv-docx th { border: 1px solid #ccc; padding: 4px 8px; }
+.pv-docx img { max-width: 100%; }
+.pv-hl { background: #c9f0de; color: inherit; border-radius: 3px; padding: 0 2px; }
+
+/* Personal data */
+.pii-groups { display: grid; gap: 10px; }
+.pii-group { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px 10px; margin: 0; background: var(--surface); }
+.pii-group legend { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; padding: 0 4px; }
+.pii-group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.pii-group li { display: flex; align-items: center; gap: 8px; font-size: 14px; min-width: 0; }
+.pii-group li input { width: auto; accent-color: var(--accent); }
+.pii-group label { overflow-wrap: anywhere; }
+.pii-add { display: flex; gap: 8px; }
+.pii-add input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+@media (max-width: 600px) { .modal { padding: 0; } .modal-box { max-height: 100vh; height: 100%; border-radius: 0; } .pv-docx { padding: 24px 20px; } }
