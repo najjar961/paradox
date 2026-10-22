@@ -24,9 +24,27 @@ Paradox is a self-hosted, multi-user AI assistant for confidential documents. Up
 - Several workspaces per user, each with its own documents, chat and custom instructions
 - Upload PDF, DOCX, TXT, Markdown, CSV, JSON, HTML and log files
 - Ask anything about a document, or ask Paradox to edit it ("rewrite this more formally", "fix the typos") and copy or download the result
+- **Keep original layout:** for PDF and Word files, Paradox proposes precise changes, you tick the ones you want, and it applies them to your original file. Logos, tables, fonts, colours and page layout stay as they were
 - Short documents are read in full; large ones are searched by passage. Answers stream live with clickable `[1]` citations
 - Model choice: **Ollama** (fully local), **OpenAI** or any OpenAI-compatible server, or **Anthropic**
 - Light and dark mode, works on mobile
+
+## Editing PDF and Word files without losing the layout
+
+With **Keep original layout** switched on (it appears once a PDF or Word file is uploaded), the model does not rewrite the document. It answers with a list of changes:
+
+```
+FIND: Die Laufzeit beträgt 24 Monate.
+REPLACE: Die Laufzeit beträgt 36 Monate.
+```
+
+You review them, untick any you don't want, and download the edited original.
+
+- **PDF:** each change is located by its words (tolerant of punctuation, quotes, case, line-break hyphens and small wording differences). The affected lines are removed with a real redaction, so the old text is gone from the file, not hidden under a box. The new text is drawn in the same place, size and colour, justified, left, right or centred like the original. Paradox reuses the PDF's own embedded font when it contains every needed letter, otherwise a font with identical letter widths (Carlito for Calibri, Liberation for Arial and Times, DejaVu), otherwise a standard font scaled to the same width. If the new text is longer, it uses free space below or is set slightly smaller, and tells you so.
+- **Word:** only the words that differ are replaced inside the existing runs, so bold, italics, colours, styles, tables, headers and footers are untouched.
+- Limits: scanned PDFs (no text layer), rotated pages and changes spanning two pages are not supported. A PDF can't reflow following paragraphs, so much longer text has to fit the existing space.
+
+The self-hosted app does this with [PyMuPDF](https://github.com/pymupdf/PyMuPDF) and python-docx (`app/layout_edit.py`); Paradox Lite does the same in the browser with [MuPDF.js](https://github.com/ArtifexSoftware/mupdf.js) and JSZip (`docs/app/layout.js`).
 
 ## Paradox Lite: no install, runs in your browser
 

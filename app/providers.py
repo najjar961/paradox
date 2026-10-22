@@ -164,6 +164,18 @@ class ChatModel:
         last = messages[-1]["content"] if messages else ""
         n_sources = last.count("<source id=")
         question = last.rsplit("My request: ", 1)[-1]
+        if "Layout mode is ON" in system and "<source" in last:
+            # Propose a change to the first sentence of the first source, like a real model would.
+            body = last.split(">", 2)[-1] if 'complete="yes"' in last else last
+            m = re.search(r"source id=\"1\"[^>]*>\n(.+?)(?:\n|$)", last)
+            first = (m.group(1) if m else body).strip()[:120]
+            words = first.split()
+            find = " ".join(words[: min(6, len(words))])
+            reply = f"I changed the opening words.\n\nFIND: {find}\nREPLACE: {find.upper()}"
+            for word in reply.split(" "):
+                await asyncio.sleep(0.01)
+                yield word + " "
+            return
         for word in f"[echo] {n_sources} source(s) retrieved. Last message: {question}".split(" "):
             await asyncio.sleep(0.03)  # stream like a real model, so Stop can be tried
             yield word + " "

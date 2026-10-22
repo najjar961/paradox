@@ -46,8 +46,28 @@ def _neutralise(text: str) -> str:
     return _TAG.sub(lambda m: m.group(0).replace("<", "‹").replace(">", "›"), text)
 
 
-def build_system_prompt(workspace_prompt: str = "", model: str = "a configurable language model") -> str:
+LAYOUT_RULES = """Layout mode is ON: the user's original file will be edited in place, keeping its exact layout.
+When the user asks for any change to the document, do NOT rewrite the whole document. Instead:
+1. Write one short sentence saying what you changed.
+2. Then list each change in exactly this format, with an empty line between changes:
+
+FIND: <text copied word for word from the document>
+REPLACE: <the new text>
+
+Rules for changes:
+- FIND must be copied exactly from the sources, including punctuation. Never paraphrase it.
+- Keep each FIND short: a name, a date, a number, one sentence, or at most one paragraph.
+- Only list text that really changes. Keep everything else as it is.
+- To delete text, leave REPLACE empty.
+- New text should be about as long as the old text, because it must fit in the same space.
+If the user only asks a question, answer normally without FIND/REPLACE."""
+
+
+def build_system_prompt(workspace_prompt: str = "", model: str = "a configurable language model",
+                        layout: bool = False) -> str:
     parts = [BASE_RULES.replace("{model}", model)]
+    if layout:
+        parts.append(LAYOUT_RULES)
     if workspace_prompt.strip():
         parts.append("Extra instructions from the user for this workspace:\n" + workspace_prompt.strip())
     return "\n\n".join(parts)

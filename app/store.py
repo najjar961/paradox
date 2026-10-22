@@ -29,6 +29,8 @@ class Document:
     name: str
     chars: int
     chunks: int
+    kind: str = ""          # "pdf" or "docx" when the original can be edited in place
+    editable: bool = False
 
 
 @dataclass
@@ -38,17 +40,21 @@ class Workspace:
     system_prompt: str = ""
     documents: dict[str, Document] = field(default_factory=dict)
     texts: dict[str, str] = field(default_factory=dict, repr=False)  # full text per document
+    originals: dict[str, bytes] = field(default_factory=dict, repr=False)  # original PDF/DOCX bytes, RAM only
     chunks: list[Chunk] = field(default_factory=list)
     vectors: np.ndarray | None = None  # shape (n_chunks, dim), L2-normalised
     history: list[dict] = field(default_factory=list)  # {"role", "content"}
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
-    def add(self, doc: Document, chunks: list[Chunk], vectors: np.ndarray, text: str = "") -> None:
+    def add(self, doc: Document, chunks: list[Chunk], vectors: np.ndarray, text: str = "",
+            original: bytes | None = None) -> None:
         with self.lock:
             if self.vectors is not None and self.vectors.shape[1] != vectors.shape[1]:
                 raise ValueError("Embedding dimension changed; create a new workspace.")
             self.documents[doc.id] = doc
             self.texts[doc.id] = text
+            if original is not None:
+                self.originals[doc.id] = original
             self.chunks.extend(chunks)
             self.vectors = vectors if self.vectors is None else np.vstack([self.vectors, vectors])
 
@@ -58,6 +64,7 @@ class Workspace:
                 return False
             del self.documents[doc_id]
             self.texts.pop(doc_id, None)
+            self.originals.pop(doc_id, None)
             keep = [i for i, c in enumerate(self.chunks) if c.doc_id != doc_id]
             self.chunks = [self.chunks[i] for i in keep]
             self.vectors = self.vectors[keep] if keep and self.vectors is not None else None
@@ -108,6 +115,7 @@ class Session:
             ws.history.clear()
             ws.documents.clear()
             ws.texts.clear()
+            ws.originals.clear()
             ws.vectors = None
         self.workspaces.clear()
 

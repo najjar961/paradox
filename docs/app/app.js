@@ -10,6 +10,7 @@
 // - Closing the tab, or "Wipe", drops everything.
 
 import * as pdfjs from "./vendor/pdf.min.mjs";
+import { parseChanges, applyPdf, applyDocx } from "./layout.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
 
@@ -211,8 +212,14 @@ class FakeEngine {
     return { completions: { async create({ messages }) {
       self._stop = false;
       const last = messages[messages.length - 1].content;
+      const layout = messages[0].content.includes("Layout mode is ON");
       const n = (last.match(/<source id=/g) || []).length;
-      const words = `Sehr geehrte Frau Zmiko,\n\nich bewerbe mich hiermit als Cyber Defense Analyst [1].\n\nFreundliche Grüße\nGiorgio El Najjar\n\n---\nGeändert: förmlicher Ton. (${n} source(s) read)`.split(/(?<= )/);
+      const src = /<source id="1"[^>]*>\n([^\n]+)/.exec(last);
+      const opening = src ? src[1].trim().split(/\s+/).slice(0, 5).join(" ") : "";
+      const reply = layout && opening
+        ? `I changed the opening words.\n\nFIND: ${opening}\nREPLACE: ${opening.toUpperCase()}`
+        : `Dear Mr Weber,\n\nthank you for your quick reply [1].\n\nBest regards,\nAnna Schulz\n\n---\nChanged: more formal tone. (${n} source(s) read)`;
+      const words = reply.split(/(?<= )/);
       return (async function* () {
         for (const w of words) {
           if (self._stop) return;
@@ -329,6 +336,7 @@ function search(query, k) {
 }
 
 function renderDocs(pending = []) {
+  $("#layout-row").hidden = !state.docs.some((d) => d.original);
   const list = $("#doc-list");
   const items = state.docs.map((d) => {
     const li = document.createElement("li");
@@ -356,7 +364,9 @@ async function addFiles(files) {
       if (file.size > MAX_FILE_MB * 1024 * 1024) throw new Error(`Larger than ${MAX_FILE_MB} MB.`);
       const text = normalise(await extractText(file));
       if (!text) throw new Error("The file contains no text.");
-      state.docs.push({ id: crypto.randomUUID(), name: file.name, text, chunks: chunkText(text) });
+      const kind = ext(file.name);
+      const original = kind === "pdf" || kind === "docx" ? new Uint8Array(await file.arrayBuffer()) : null;
+      state.docs.push({ id: crypto.randomUUID(), name: file.name, text, chunks: chunkText(text), kind, original });
     } catch (err) {
       toast(`${file.name}: ${err.message || err}`);
     }
@@ -415,6 +425,26 @@ Always:
 
 function neutralise(s) {
   return s.replace(/<\/?\s*(sources?|system|instructions?|question)[^>]*>/gi, (m) => m.replace("<", "‹").replace(">", "›"));
+}
+
+const LAYOUT_RULES = `Layout mode is ON: the user's original file will be edited in place, keeping its exact layout.
+When the user asks for any change to the document, do NOT rewrite the whole document. Instead:
+1. Write one short sentence saying what you changed.
+2. Then list each change in exactly this format, with an empty line between changes:
+
+FIND: <text copied word for word from the document>
+REPLACE: <the new text>
+
+Rules for changes:
+- FIND must be copied exactly from the sources, including punctuation. Never paraphrase it.
+- Keep each FIND short: a name, a date, a number, one sentence, or at most one paragraph.
+- Only list text that really changes. Keep everything else as it is.
+- To delete text, leave REPLACE empty.
+- New text should be about as long as the old text, because it must fit in the same space.
+If the user only asks a question, answer normally without FIND/REPLACE.`;
+
+function layoutOn() {
+  return !$("#layout-row").hidden && $("#keep-layout").checked;
 }
 
 function buildTurn(question) {
@@ -607,6 +637,90 @@ function attachActions(msgEl, answer, docName) {
   msgEl.append(row);
 }
 
+// ------------------------------------------------------------------ layout-preserving edits
+
+let mupdfModule = null;
+async function loadMupdf() {
+  if (!mupdfModule) mupdfModule = await import("./vendor/mupdf/mupdf.js");
+  return mupdfModule;
+}
+
+async function loadFont(file) {
+  const res = await fetch(`vendor/fonts/${file}`);
+  return res.ok ? new Uint8Array(await res.arrayBuffer()) : null;
+}
+
+async function editOriginal(doc, changes) {
+  if (doc.kind === "pdf") return applyPdf(await loadMupdf(), doc.original, changes, { loadFont });
+  return applyDocx(window.JSZip, doc.original, changes);
+}
+
+function renderChanges(msgEl, answer) {
+  const { intro, changes } = parseChanges(answer.replace(/\s*\[stopped\]$/, ""));
+  if (!changes.length) return;
+  const docs = state.docs.filter((d) => d.original);
+  const textEl = msgEl.querySelector(".text");
+  textEl.innerHTML = intro ? renderMarkdown(intro) : "";
+  msgEl.querySelectorAll(".actions button").forEach((b) => { if (b.textContent !== "Copy") b.remove(); });
+
+  const card = Object.assign(document.createElement("div"), { className: "changes" });
+  const head = Object.assign(document.createElement("div"), { className: "changes-head",
+    textContent: `${changes.length} ${changes.length === 1 ? "change" : "changes"} to your original file` });
+  const list = document.createElement("ol");
+  const stamp = Date.now();
+  const rows = changes.map((c, i) => {
+    const li = document.createElement("li");
+    const box = Object.assign(document.createElement("input"), { type: "checkbox", checked: true, id: `chg-${stamp}-${i}` });
+    box.setAttribute("aria-label", `Include change ${i + 1}`);
+    const body = document.createElement("label");
+    body.htmlFor = box.id;
+    body.append(Object.assign(document.createElement("del"), { textContent: c.find }),
+      Object.assign(document.createElement("ins"), { textContent: c.replace || "(removed)" }));
+    const status = Object.assign(document.createElement("span"), { className: "chg-status" });
+    body.append(status);
+    li.append(box, body);
+    list.append(li);
+    return { box, status, li };
+  });
+  const btns = Object.assign(document.createElement("div"), { className: "changes-actions" });
+  if (!docs.length) btns.append(Object.assign(document.createElement("small"), { className: "muted",
+    textContent: "Upload the original PDF or Word file to apply these changes." }));
+  for (const d of docs) {
+    const b = Object.assign(document.createElement("button"), { type: "button", className: "primary", textContent: `Download edited ${d.name}` });
+    b.addEventListener("click", async () => {
+      const idx = changes.map((_, i) => i).filter((i) => rows[i].box.checked);
+      if (!idx.length) { toast("Select at least one change."); return; }
+      b.disabled = true;
+      const label = b.textContent;
+      b.textContent = d.kind === "pdf" ? "Editing PDF…" : "Editing document…";
+      try {
+        const { bytes, report } = await editOriginal(d, idx.map((i) => changes[i]));
+        report.forEach((r) => {
+          const row = rows[idx[r.index]];
+          row.li.className = r.ok ? "ok" : "fail";
+          row.status.textContent = r.ok ? (r.note ? `Applied, ${r.note}.` : "Applied.") : `Not applied: ${r.reason}.`;
+        });
+        const ok = report.filter((r) => r.ok).length;
+        if (ok) {
+          const type = d.kind === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+          saveBlob(new Blob([bytes], { type }), d.name.replace(/(\.[^.]+)$/, "_edited$1"));
+        }
+        toast(ok === report.length ? "All changes applied. Your edited file is downloading."
+          : `${ok} of ${report.length} changes applied. See the list for details.`);
+      } catch (err) {
+        console.error(err);
+        toast(String(err?.message || "Could not edit this file."));
+      } finally {
+        b.disabled = false;
+        b.textContent = label;
+      }
+    });
+    btns.append(b);
+  }
+  card.append(head, list, btns);
+  textEl.append(card);
+}
+
 // ------------------------------------------------------------------ chat
 
 const input = $("#chat-input");
@@ -655,7 +769,7 @@ $("#chat-form").addEventListener("submit", async (e) => {
 
   const turn = buildTurn(question);
   const messages = [
-    { role: "system", content: RULES },
+    { role: "system", content: layoutOn() ? `${RULES}\n\n${LAYOUT_RULES}` : RULES },
     ...state.history.slice(-2 * HISTORY_TURNS),
     { role: "user", content: turn.content },
   ];
@@ -692,6 +806,7 @@ $("#chat-form").addEventListener("submit", async (e) => {
     if (!failed && answer) {
       attachSources(reply, turn.sources);
       attachActions(reply, answer, turn.sources[0]?.document);
+      renderChanges(reply, answer);
       state.history.push({ role: "user", content: question }, { role: "assistant", content: answer + (stopRequested ? "\n\n[stopped]" : "") });
     }
     setStreaming(false);

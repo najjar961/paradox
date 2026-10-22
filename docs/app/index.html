@@ -69,6 +69,10 @@
         </div>
       </div>
 
+      <div id="layout-row" class="layout-row" hidden>
+        <label class="switch"><input type="checkbox" id="keep-layout" checked> <span>Keep original layout</span></label>
+        <small class="muted">Changes are applied to your original PDF or Word file.</small>
+      </div>
       <form id="chat-form" class="composer">
         <textarea id="chat-input" rows="1" maxlength="8000" placeholder="Load a model to start…" disabled></textarea>
         <button id="send" type="submit" class="primary" disabled>Send</button>
@@ -81,6 +85,7 @@
   <script src="vendor/mammoth.browser.min.js"></script>
   <script src="vendor/jspdf.umd.min.js"></script>
   <script src="vendor/docx.iife.js"></script>
+  <script src="vendor/jszip.min.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

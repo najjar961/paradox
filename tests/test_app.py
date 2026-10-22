@@ -236,18 +236,18 @@ def test_large_documents_use_passage_search(app):
 
 
 def test_full_document_message_and_removal():
-    msg = build_user_message("Fix typos", [], True, [("cv.txt", "Giorgio El Najjar, Security+")])
-    assert 'complete="yes"' in msg and "Giorgio El Najjar" in msg and msg.endswith("My request: Fix typos")
+    msg = build_user_message("Fix typos", [], True, [("cv.txt", "Anna Schulz, Security+")])
+    assert 'complete="yes"' in msg and "Anna Schulz" in msg and msg.endswith("My request: Fix typos")
 
 
 ANSWER = """Hier ist die überarbeitete Version:
 
-Sehr geehrte Frau Zmiko,
+Sehr geehrte Frau Meier,
 
-ich bewerbe mich als **Cyber Defense Analyst** [1].
+vielen Dank für Ihre **Anfrage** [1].
 
 Freundliche Grüße
-Giorgio El Najjar
+Anna Schulz
 
 ---
 Geändert: förmlicher Ton, Tippfehler korrigiert."""
@@ -256,8 +256,8 @@ Geändert: förmlicher Ton, Tippfehler korrigiert."""
 def test_clean_text_keeps_only_the_document():
     from app.export import clean_text
     out = clean_text(ANSWER)
-    assert out.startswith("Sehr geehrte Frau Zmiko,")
-    assert out.endswith("Giorgio El Najjar")
+    assert out.startswith("Sehr geehrte Frau Meier,")
+    assert out.endswith("Anna Schulz")
     assert "Geändert" not in out and "[1]" not in out and "**" not in out
 
 
@@ -270,7 +270,7 @@ def test_export_formats(app):
     assert r.content[:2] == b"PK" and "/" not in r.headers["content-disposition"].split("filename=")[1]
     from docx import Document as Docx
     paras = [p.text for p in Docx(io.BytesIO(r.content)).paragraphs]
-    assert paras[0] == "Sehr geehrte Frau Zmiko," and not any("Geändert" in p for p in paras)
+    assert paras[0] == "Sehr geehrte Frau Meier," and not any("Geändert" in p for p in paras)
     r = c.post("/api/export", json={"text": ANSWER, "format": "txt"})
     assert r.text.startswith("Sehr geehrte")
     assert c.post("/api/export", json={"text": "x", "format": "exe"}).status_code == 422
@@ -299,3 +299,106 @@ def test_stopped_answer_is_kept_in_history(app):
         pass
     assert w.history[-1]["content"].startswith("Sehr geehrte Damen")
     assert w.history[-1]["content"].endswith("[stopped]")
+
+
+# ---------------------------------------------------------------- layout-preserving edits
+
+def _sample_pdf() -> bytes:
+    import pymupdf
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 80), "Angebot Nr. 2026-118", fontsize=14, fontname="hebo")
+    page.insert_textbox(pymupdf.Rect(72, 100, 520, 200),
+                        "Die Laufzeit beträgt 24 Monate. Der Vertrag verlängert sich automatisch um "
+                        "12 Monate, wenn er nicht drei Monate vor Ablauf gekündigt wird.", fontsize=11, fontname="helv")
+    page.insert_text((72, 240), "Grundgebühr: 4.800,00 EUR", fontsize=11, fontname="helv")
+    return doc.tobytes()
+
+
+def _sample_docx() -> bytes:
+    from docx import Document as Docx
+    d = Docx()
+    p = d.add_paragraph("Die Laufzeit beträgt ")
+    p.add_run("24 Monate").bold = True
+    p.add_run(". Danach verlängert sich der Vertrag.")
+    d.add_paragraph("Mit freundlichen Grüßen")
+    buf = io.BytesIO(); d.save(buf)
+    return buf.getvalue()
+
+
+def test_parse_changes():
+    from app.layout_edit import parse_changes
+    out = parse_changes("""I updated two things.
+
+**FIND:** "Die Laufzeit beträgt 24 Monate."
+**REPLACE:** Die Laufzeit beträgt 36 Monate.
+
+FIND: 4.800,00 EUR
+REPLACE: 4.350,00 EUR
+---
+Changed: term and price.""")
+    assert out == [{"find": "Die Laufzeit beträgt 24 Monate.", "replace": "Die Laufzeit beträgt 36 Monate."},
+                   {"find": "4.800,00 EUR", "replace": "4.350,00 EUR"}]
+
+
+def test_pdf_edit_in_place_removes_old_text():
+    import pymupdf
+    from app.layout_edit import apply_pdf
+    out, report = apply_pdf(_sample_pdf(), [
+        {"find": "Die Laufzeit betragt 24 Monate", "replace": "Die Laufzeit beträgt 36 Monate"},  # typo: fuzzy match
+        {"find": "4.800,00 EUR", "replace": "4.350,00 EUR"},
+        {"find": "This sentence is not in the file", "replace": "x"},
+    ])
+    assert [r["ok"] for r in report] == [True, True, False]
+    text = pymupdf.open(stream=out, filetype="pdf")[0].get_text()
+    assert "36 Monate" in text and "4.350,00 EUR" in text and "Angebot Nr. 2026-118" in text
+    assert "24 Monate" not in text and "4.800,00" not in text  # really removed, not just covered
+
+
+def test_docx_edit_keeps_formatting():
+    from docx import Document as Docx
+    from app.layout_edit import apply_docx
+    out, report = apply_docx(_sample_docx(), [{"find": "Die Laufzeit beträgt 24 Monate.", "replace": "Die Laufzeit beträgt 36 Monate."}])
+    assert report[0]["ok"]
+    runs = Docx(io.BytesIO(out)).paragraphs[0].runs
+    assert [(r.text, bool(r.bold)) for r in runs if r.text] == [
+        ("Die Laufzeit beträgt ", False), ("36 Monate", True), (". Danach verlängert sich der Vertrag.", False)]
+
+
+def test_apply_endpoint_and_layout_chat(app):
+    c = login(app, "alice")
+    ws = c.get("/api/workspaces").json()[0]
+    pdf = upload(c, ws["id"], "angebot.pdf", _sample_pdf()).json()
+    txt = upload(c, ws["id"], "notes.txt", b"plain text").json()
+    assert pdf["editable"] and pdf["kind"] == "pdf" and not txt["editable"]
+
+    events = chat(c, ws["id"], "Change the heading")
+    assert "FIND" not in "".join(e.get("text", "") for e in events)  # layout off by default
+    r = c.post(f"/api/workspaces/{ws['id']}/chat", json={"message": "Change the heading", "keep_layout": True})
+    answer = "".join(json.loads(l).get("text", "") for l in r.text.splitlines() if l.strip())
+    assert "FIND:" in answer and "REPLACE:" in answer
+
+    r = c.post(f"/api/workspaces/{ws['id']}/documents/{pdf['id']}/apply",
+               json={"changes": [{"find": "4.800,00 EUR", "replace": "4.350,00 EUR"}]})
+    assert r.status_code == 200 and r.content.startswith(b"%PDF")
+    assert json.loads(r.headers["x-paradox-report"])[0]["ok"] is True
+    assert 'filename="angebot_edited.pdf"' in r.headers["content-disposition"]
+    r = c.post(f"/api/workspaces/{ws['id']}/documents/{txt['id']}/apply",
+               json={"changes": [{"find": "plain", "replace": "x"}]})
+    assert r.status_code == 404
+
+    # Originals are wiped with the session.
+    sess = app.state.store.get(c.cookies.get(COOKIE))
+    w = sess.workspaces[ws["id"]]
+    assert w.originals
+    c.post("/api/logout")
+    assert not w.originals
+
+
+def test_punctuation_outside_the_change_is_kept():
+    from docx import Document as Docx
+    from app.layout_edit import apply_docx
+    d = Docx(); d.add_paragraph("Gehalt von 3.900 Euro, zahlbar zum Monatsende.")
+    buf = io.BytesIO(); d.save(buf)
+    out, _ = apply_docx(buf.getvalue(), [{"find": "Gehalt von 3.900 Euro", "replace": "Gehalt von 4.250 Euro"}])
+    assert Docx(io.BytesIO(out)).paragraphs[0].text == "Gehalt von 4.250 Euro, zahlbar zum Monatsende."

@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from .auth import LoginLimiter, UserDirectory
 from .config import Settings, load_settings
 from .export import clean_text, to_docx, to_pdf
+from . import layout_edit
 from .ingest import IngestError, chunk_text, extension, extract_text, SUPPORTED
 from .providers import ChatModel, Embedder, ProviderError
 from .rag import build_system_prompt, build_user_message, citations, document_citations
@@ -51,6 +52,16 @@ class WorkspacePatch(BaseModel):
 
 class ChatIn(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
+    keep_layout: bool = False
+
+
+class ChangeIn(BaseModel):
+    find: str = Field(min_length=1, max_length=8000)
+    replace: str = Field(default="", max_length=8000)
+
+
+class ApplyIn(BaseModel):
+    changes: list[ChangeIn] = Field(min_length=1, max_length=50)
 
 
 class ExportIn(BaseModel):
@@ -240,7 +251,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if len(buf) > limit:
                 raise HTTPException(413, f"File is larger than {s.max_upload_mb} MB.")
         try:
-            text = await asyncio.to_thread(extract_text, name, bytes(buf))
+            raw = bytes(buf)
+            text = await asyncio.to_thread(extract_text, name, raw)
         except IngestError as exc:
             raise HTTPException(422, str(exc)) from exc
         finally:
@@ -254,13 +266,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ProviderError as exc:
             raise HTTPException(502, str(exc)) from exc
 
-        doc = Document(id=secrets.token_hex(8), name=name, chars=len(text), chunks=len(pieces))
+        kind = extension(name).lstrip(".")
+        editable = kind in ("pdf", "docx")
+        doc = Document(id=secrets.token_hex(8), name=name, chars=len(text), chunks=len(pieces),
+                       kind=kind if editable else "", editable=editable)
         chunks = [Chunk(doc.id, name, i, t) for i, t in enumerate(pieces)]
         try:
-            ws.add(doc, chunks, vectors, text)
+            ws.add(doc, chunks, vectors, text, raw if editable else None)
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
         return doc.__dict__
+
+    @app.post("/api/workspaces/{ws_id}/documents/{doc_id}/apply")
+    async def apply_changes(doc_id: str, body: ApplyIn, ws: Workspace = Depends(workspace)):
+        """Apply FIND/REPLACE changes to the original file and send it back. Nothing is kept."""
+        doc = ws.documents.get(doc_id)
+        original = ws.originals.get(doc_id)
+        if doc is None or original is None:
+            raise HTTPException(404, "This document can't be edited in place. Only PDF and Word files can.")
+        changes = [c.model_dump() for c in body.changes]
+        try:
+            data, report = await asyncio.to_thread(layout_edit.apply, doc.kind, original, changes)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        stem = re.sub(r"[^\w\-. ]", "_", doc.name.rsplit(".", 1)[0]).strip(" ._") or "document"
+        media = "application/pdf" if doc.kind == "pdf" else \
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        return Response(data, media_type=media, headers={
+            "Content-Disposition": f'attachment; filename="{stem}_edited.{doc.kind}"',
+            "X-Paradox-Report": json.dumps(report, ensure_ascii=True),
+            "Access-Control-Expose-Headers": "X-Paradox-Report",
+        })
 
     @app.delete("/api/workspaces/{ws_id}/documents/{doc_id}")
     async def remove_document(doc_id: str, ws: Workspace = Depends(workspace)):
@@ -292,7 +328,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         else:
             sources = []
 
-        system = build_system_prompt(ws.system_prompt, f"{s.llm_model} (via {s.llm_provider})")
+        layout = body.keep_layout and bool(ws.originals)
+        system = build_system_prompt(ws.system_prompt, f"{s.llm_model} (via {s.llm_provider})", layout)
         history = ws.history[-2 * s.history_turns:]
         # History keeps plain questions; only the current turn carries the document text.
         user_msg = build_user_message(question, hits, bool(ws.chunks), full_docs)

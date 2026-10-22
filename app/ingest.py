@@ -27,6 +27,22 @@ def _decode(data: bytes) -> str:
 
 
 def _pdf(data: bytes) -> str:
+    try:
+        import pymupdf
+    except ImportError:
+        pymupdf = None
+    if pymupdf is not None:
+        try:
+            doc = pymupdf.open(stream=data, filetype="pdf")
+        except Exception as exc:  # noqa: BLE001
+            raise IngestError("Could not read PDF.") from exc
+        if doc.needs_pass:
+            raise IngestError("PDF is password-protected.")
+        text = "\n\n".join(page.get_text("text", sort=True) for page in doc).strip()
+        doc.close()
+        if not text:
+            raise IngestError("PDF has no extractable text (it may be a scan).")
+        return text
     from pypdf import PdfReader
 
     try:

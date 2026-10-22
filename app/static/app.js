@@ -135,6 +135,7 @@ function renderWorkspace() {
       b.querySelector(".text").append(note);
     }
     attachActions(b, body, ws.documents[0]?.name);
+    renderChanges(b, body);
     box.append(b);
   }
   box.scrollTop = box.scrollHeight;
@@ -205,8 +206,13 @@ $("#menu").addEventListener("click", () => document.querySelector(".sidebar").cl
 
 // ------------------------------------------------------------------ documents
 
+function editableDocs() {
+  return (state.current?.documents || []).filter((d) => d.editable);
+}
+
 function renderDocs(pending = []) {
   const docs = state.current?.documents || [];
+  $("#layout-row").hidden = !docs.some((d) => d.editable);
   $("#doc-count").textContent = docs.length;
   const list = $("#doc-list");
   const items = docs.map((d) => {
@@ -357,6 +363,96 @@ function attachActions(msgEl, text, docName) {
   msgEl.append(row);
 }
 
+// ------------------------------------------------------------------ layout-preserving edits
+
+const CHANGE_RE = /FIND\s*:\s*([\s\S]+?)\s*\n\s*REPLACE\s*:[ \t]*([\s\S]*?)(?=\n\s*FIND\s*:|\n\s*-{3,}\s*(?:\n|$)|$)/gi;
+const WRAP = "\"'`„“”‚‘’«»";
+
+function unwrap(s) {
+  s = s.trim();
+  while (s.length >= 2 && WRAP.includes(s[0]) && WRAP.includes(s[s.length - 1])) s = s.slice(1, -1).trim();
+  return s;
+}
+
+function parseChanges(answer) {
+  const text = answer.replace(/\r\n/g, "\n").replace(/\*\*|__/g, "");
+  const out = [];
+  for (const m of text.matchAll(CHANGE_RE)) {
+    const find = unwrap(m[1]), replace = unwrap(m[2]);
+    if (find && find !== replace) out.push({ find, replace });
+  }
+  const first = text.search(/FIND\s*:/i);
+  return { intro: first > 0 ? text.slice(0, first).trim() : "", changes: out };
+}
+
+function renderChanges(msgEl, answer) {
+  const { intro, changes } = parseChanges(answer.replace(/\s*\[stopped\]$/, ""));
+  const docs = editableDocs();
+  if (!changes.length) return;
+  const textEl = msgEl.querySelector(".text");
+  textEl.innerHTML = intro ? renderMarkdown(intro) : "";
+  // The plain-text exports make no sense for a list of changes; keep Copy only.
+  msgEl.querySelectorAll(".actions button").forEach((b) => { if (b.textContent !== "Copy") b.remove(); });
+
+  const card = document.createElement("div");
+  card.className = "changes";
+  const list = document.createElement("ol");
+  const rows = changes.map((c, i) => {
+    const li = document.createElement("li");
+    const box = Object.assign(document.createElement("input"), { type: "checkbox", checked: true, id: `chg-${Date.now()}-${i}` });
+    box.setAttribute("aria-label", `Include change ${i + 1}`);
+    const body = document.createElement("label");
+    body.htmlFor = box.id;
+    const del = Object.assign(document.createElement("del"), { textContent: c.find });
+    const ins = Object.assign(document.createElement("ins"), { textContent: c.replace || "(removed)" });
+    const status = Object.assign(document.createElement("span"), { className: "status" });
+    body.append(del, ins, status);
+    li.append(box, body);
+    list.append(li);
+    return { box, status, li };
+  });
+  const head = Object.assign(document.createElement("div"), { className: "changes-head",
+    textContent: `${changes.length} ${changes.length === 1 ? "change" : "changes"} to your original file` });
+  const btns = document.createElement("div");
+  btns.className = "changes-actions";
+  if (!docs.length) {
+    btns.append(Object.assign(document.createElement("small"), { className: "muted",
+      textContent: "Upload the original PDF or Word file to apply these changes." }));
+  }
+  for (const d of docs) {
+    const b = Object.assign(document.createElement("button"), { type: "button", className: "primary",
+      textContent: `Download edited ${d.name}` });
+    b.addEventListener("click", async () => {
+      const picked = changes.filter((_, i) => rows[i].box.checked);
+      if (!picked.length) { toast("Select at least one change."); return; }
+      b.disabled = true;
+      try {
+        const res = await api(`/api/workspaces/${state.current.id}/documents/${d.id}/apply`,
+          { method: "POST", body: { changes: picked }, raw: true });
+        let report = [];
+        try { report = JSON.parse(res.headers.get("X-Paradox-Report") || "[]"); } catch {}
+        const idx = changes.map((_, i) => i).filter((i) => rows[i].box.checked);
+        report.forEach((r) => {
+          const row = rows[idx[r.index]];
+          row.li.className = r.ok ? "ok" : "fail";
+          row.status.textContent = r.ok ? (r.note ? `Applied, ${r.note}.` : "Applied.") : `Not applied: ${r.reason}.`;
+        });
+        const okCount = report.filter((r) => r.ok).length;
+        if (okCount) saveBlob(await res.blob(), d.name.replace(/(\.[^.]+)$/, "_edited$1"));
+        toast(okCount === report.length ? "All changes applied. Your edited file is downloading."
+          : `${okCount} of ${report.length} changes applied. See the list for details.`);
+      } catch (err) {
+        if (err.message !== "unauthorised") toast(err.message);
+      } finally {
+        b.disabled = false;
+      }
+    });
+    btns.append(b);
+  }
+  card.append(head, list, btns);
+  textEl.append(card);
+}
+
 function attachSources(msgEl, sources) {
   msgEl._sources = sources;
   msgEl.querySelector(".sources")?.remove();
@@ -443,7 +539,7 @@ $("#chat-form").addEventListener("submit", async (e) => {
   let stopped = false;
   try {
     const res = await api(`/api/workspaces/${ws.id}/chat`, {
-      method: "POST", body: { message: text }, raw: true, signal: controller.signal,
+      method: "POST", body: { message: text, keep_layout: !$("#layout-row").hidden && $("#keep-layout").checked }, raw: true, signal: controller.signal,
     });
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -484,6 +580,7 @@ $("#chat-form").addEventListener("submit", async (e) => {
     if (answer) {
       attachSources(reply, sources);
       attachActions(reply, answer, sources[0]?.document);
+      renderChanges(reply, answer);
       ws.history.push({ role: "user", content: text }, { role: "assistant", content: answer + (stopped ? "\n\n[stopped]" : "") });
     }
     controller = null;
