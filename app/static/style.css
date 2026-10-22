@@ -211,3 +211,27 @@ body.modal-open { overflow: hidden; }
 .pii-add { display: flex; gap: 8px; }
 .pii-add input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
 @media (max-width: 600px) { .modal { padding: 0; } .modal-box { max-height: 100vh; height: 100%; border-radius: 0; } .pv-docx { padding: 24px 20px; } }
+
+/* Forms */
+.form-ai { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.form-ai textarea { resize: vertical; }
+.form-ai-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.form-ai-row .switch input { width: auto; }
+.form-fields { display: grid; gap: 8px; }
+.form-row { display: grid; grid-template-columns: minmax(140px, 40%) 1fr; gap: 12px; align-items: center; padding: 6px 8px; border-radius: 8px; }
+.form-row label { font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+.form-row.is-check { grid-template-columns: 1fr auto; }
+.form-row.is-check input { width: auto; accent-color: var(--accent); }
+.form-row select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+.form-row.ai-filled { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+@media (max-width: 600px) { .form-row { grid-template-columns: 1fr; gap: 4px; } }
+
+/* Excel and PowerPoint previews */
+.pv-docx .pv-sheet { border-collapse: collapse; font: 13px/1.4 var(--sans); margin-bottom: 18px; }
+.pv-docx .pv-sheet th { background: #f1efe9; color: #6b6862; font-weight: 500; padding: 3px 8px; border: 1px solid #ddd; }
+.pv-docx .pv-sheet td { padding: 3px 8px; border: 1px solid #ddd; white-space: nowrap; }
+.pv-docx h3 { font-size: 14px; margin: 0 0 8px; }
+.pv-docx { overflow-x: auto; }
+.pv-slide { position: relative; border: 1px solid #ddd; border-radius: 6px; padding: 18px 22px; margin-bottom: 14px; aspect-ratio: 16 / 9; max-width: 100%; overflow: hidden; }
+.pv-slide h3 { font-size: 20px; margin: 0 0 10px; }
+.pv-slide p { margin: 0 0 6px; }

@@ -22,8 +22,11 @@ Paradox is a self-hosted, multi-user AI assistant for confidential documents. Up
 
 - Multi-user login (accounts from a read-only `users.yaml` of bcrypt hashes)
 - Several workspaces per user, each with its own documents, chat and custom instructions
-- Upload PDF, DOCX, TXT, Markdown, CSV, JSON, HTML and log files
+- Upload PDF, Word, Excel, PowerPoint, scans and photos, TXT, Markdown, CSV, JSON, HTML and log files
 - Ask anything about a document, or ask Paradox to edit it ("rewrite this more formally", "fix the typos") and copy or download the result
+- **Fill in PDF forms:** Paradox lists a form's fields with their visible labels; the AI fills them from what you tell it and your other uploaded documents (only listed options and real fields are accepted), you check every value, preview and download. Fields stay editable
+- **Scans and photos:** scanned PDFs and photos (PNG, JPG, TIFF, WebP) are read with OCR in German and English and turned into searchable PDFs, so you can ask about them and redact them (the scanned pixels under a redaction are blanked)
+- **Excel and PowerPoint:** ask about spreadsheets and slides, edit cell text, numbers and slide text in place (formatting, formulas, charts and images untouched; formulas recalculate when opened), and redact them
 - **Remove personal data:** finds names, addresses, emails, phone numbers, IBANs, card numbers, dates of birth and ID numbers, lets you tick what goes, then truly redacts it (the text is removed from the file, not covered) and wipes the author and other hidden properties
 - **Preview before download:** every edit or redaction opens a Before/After preview of the real pages with the changes highlighted
 - **Keep original layout:** for PDF and Word files, Paradox proposes precise changes, you tick the ones you want, and it applies them to your original file. Logos, tables, fonts, colours and page layout stay as they were
@@ -44,7 +47,7 @@ Before you see them, Paradox **checks every change against your document**. If t
 
 - **PDF:** each change is located by its words (tolerant of punctuation, quotes, case, line-break hyphens and small wording differences). The affected lines are removed with a real redaction, so the old text is gone from the file, not hidden under a box. The new text is drawn in the same place, size and colour, justified, left, right or centred like the original. Paradox reuses the PDF's own embedded font when it contains every needed letter, otherwise a font with identical letter widths (Carlito for Calibri, Liberation for Arial and Times, DejaVu), otherwise a standard font scaled to the same width. If the new text is longer, it uses free space below or is set slightly smaller, and tells you so.
 - **Word:** only the words that differ are replaced inside the existing runs, so bold, italics, colours, styles, tables, headers and footers are untouched.
-- Limits: scanned PDFs (no text layer), rotated pages and changes spanning two pages are not supported. A PDF can't reflow following paragraphs, so much longer text has to fit the existing space.
+- Limits: text in scanned documents can be redacted but not rewritten, and rotated pages and changes spanning two pages are not supported. A PDF can't reflow following paragraphs, so much longer text has to fit the existing space.
 
 The self-hosted app does this with [PyMuPDF](https://github.com/pymupdf/PyMuPDF) and python-docx (`app/layout_edit.py`); Paradox Lite does the same in the browser with [MuPDF.js](https://github.com/ArtifexSoftware/mupdf.js) and JSZip (`docs/app/layout.js`).
 

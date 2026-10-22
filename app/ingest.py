@@ -5,7 +5,9 @@ import html
 import io
 import re
 
-SUPPORTED = {".pdf", ".docx", ".txt", ".md", ".markdown", ".csv", ".json", ".log", ".html", ".htm"}
+SUPPORTED = {".pdf", ".docx", ".xlsx", ".pptx", ".txt", ".md", ".markdown", ".csv", ".json", ".log", ".html", ".htm",
+             ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
+IMAGES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
 
 
 class IngestError(ValueError):
@@ -90,6 +92,18 @@ def extract_text(name: str, data: bytes) -> str:
         raise IngestError(f"Unsupported file type '{ext or name}'.")
     if ext == ".pdf":
         text = _pdf(data)
+    elif ext == ".xlsx":
+        from .office import xlsx_text
+        try:
+            text = xlsx_text(data)
+        except Exception as exc:  # noqa: BLE001
+            raise IngestError("Could not read this Excel file.") from exc
+    elif ext == ".pptx":
+        from .office import pptx_text
+        try:
+            text = pptx_text(data)
+        except Exception as exc:  # noqa: BLE001
+            raise IngestError("Could not read this PowerPoint file.") from exc
     elif ext == ".docx":
         text = _docx(data)
     elif ext in {".html", ".htm"}:

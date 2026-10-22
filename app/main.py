@@ -19,8 +19,8 @@ from pydantic import BaseModel, Field
 from .auth import LoginLimiter, UserDirectory
 from .config import Settings, load_settings
 from .export import clean_text, to_docx, to_pdf
-from . import layout_edit, privacy
-from .ingest import IngestError, chunk_text, extension, extract_text, SUPPORTED
+from . import forms, layout_edit, ocr, privacy
+from .ingest import IMAGES, IngestError, chunk_text, extension, extract_text, SUPPORTED
 from .providers import ChatModel, Embedder, ProviderError
 from .rag import build_system_prompt, build_user_message, citations, document_citations
 from .store import Chunk, Document, Session, SessionStore, Workspace
@@ -67,6 +67,15 @@ class ApplyIn(BaseModel):
 
 class RedactIn(BaseModel):
     terms: list[str] = Field(min_length=1, max_length=200)
+
+
+class FormSuggestIn(BaseModel):
+    info: str = Field(default="", max_length=8000)
+    use_documents: bool = True
+
+
+class FormFillIn(BaseModel):
+    values: dict[str, str | bool] = Field(max_length=500)
 
 
 class ExportIn(BaseModel):
@@ -255,13 +264,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             buf.extend(part)
             if len(buf) > limit:
                 raise HTTPException(413, f"File is larger than {s.max_upload_mb} MB.")
+        raw = bytes(buf)
+        buf.clear()
+        ext = extension(name)
+        scanned = False
         try:
-            raw = bytes(buf)
+            if ext in IMAGES:
+                if not ocr.available():
+                    raise HTTPException(422, "Photos and scans need text recognition (OCR), which isn't installed on this server.")
+                raw = await asyncio.to_thread(ocr.image_to_pdf, raw)
+                name = name.rsplit(".", 1)[0] + ".pdf"
+                ext = ".pdf"
+            if ext == ".pdf" and await asyncio.to_thread(ocr.needs_ocr, raw):
+                if not ocr.available():
+                    raise HTTPException(422, "This PDF is a scan. Text recognition (OCR) isn't installed on this server.")
+                raw = await asyncio.to_thread(ocr.ocr_pdf, raw)
+                scanned = True
             text = await asyncio.to_thread(extract_text, name, raw)
         except IngestError as exc:
             raise HTTPException(422, str(exc)) from exc
-        finally:
-            buf.clear()
+        except RuntimeError as exc:  # OCR problems
+            raise HTTPException(422, str(exc)) from exc
 
         pieces = chunk_text(text, s.chunk_size, s.chunk_overlap)
         if sess.chunk_count() + len(pieces) > s.max_chunks_per_user:
@@ -271,13 +294,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ProviderError as exc:
             raise HTTPException(502, str(exc)) from exc
 
-        kind = extension(name).lstrip(".")
-        editable = kind in ("pdf", "docx")
+        kind = ext.lstrip(".")
+        keep = kind in ("pdf", "docx", "xlsx", "pptx")
+        has_form = kind == "pdf" and bool(await asyncio.to_thread(forms.list_fields, raw))
         doc = Document(id=secrets.token_hex(8), name=name, chars=len(text), chunks=len(pieces),
-                       kind=kind if editable else "", editable=editable)
+                       kind=kind if keep else "", editable=keep and not scanned, scanned=scanned, form=has_form)
         chunks = [Chunk(doc.id, name, i, t) for i, t in enumerate(pieces)]
         try:
-            ws.add(doc, chunks, vectors, text, raw if editable else None)
+            ws.add(doc, chunks, vectors, text, raw if keep else None)
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
         return doc.__dict__
@@ -307,7 +331,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         doc = ws.documents.get(doc_id)
         original = ws.originals.get(doc_id)
         if doc is None or original is None:
-            raise HTTPException(404, "Only PDF and Word files can be edited or redacted.")
+            raise HTTPException(404, "Only PDF, Word, Excel and PowerPoint files can be edited or redacted.")
         return doc, original
 
     def _file_json(doc, data: bytes, suffix: str, extra: dict) -> dict:
@@ -324,16 +348,57 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         marks = [r["mark"] for r in report if r.get("ok") and r.get("mark")]
-        pv = await asyncio.to_thread(privacy.preview, doc.kind, original, data, marks)
         highlight = [c["replace"] for c, r in zip(changes, report) if r["ok"]]
+        pv = await asyncio.to_thread(privacy.preview, doc.kind, original, data, marks, highlight)
         return _file_json(doc, data, "edited", {"report": report, "preview": pv, "highlight": highlight})
+
+    @app.get("/api/workspaces/{ws_id}/documents/{doc_id}/form")
+    async def form_fields(doc_id: str, ws: Workspace = Depends(workspace)):
+        doc, original = _editable(ws, doc_id)
+        if doc.kind != "pdf":
+            raise HTTPException(422, "Only PDF forms can be filled in.")
+        fields = await asyncio.to_thread(forms.list_fields, original)
+        if not fields:
+            raise HTTPException(422, "This PDF has no fillable fields.")
+        return {"fields": fields}
+
+    @app.post("/api/workspaces/{ws_id}/documents/{doc_id}/form/suggest")
+    async def form_suggest(doc_id: str, body: FormSuggestIn, request: Request, ws: Workspace = Depends(workspace)):
+        """Let the model suggest values from what the user wrote and their other documents."""
+        doc, original = _editable(ws, doc_id)
+        fields = await asyncio.to_thread(forms.list_fields, original)
+        others = "\n\n".join(f"[{d.name}]\n{ws.texts[d.id][:6000]}" for d in ws.documents.values()
+                              if d.id != doc_id and body.use_documents)[:s.full_doc_chars]
+        try:
+            reply = await request.app.state.chat.complete(forms.FILL_SYSTEM,
+                                                          [{"role": "user", "content": forms.fill_prompt(fields, body.info, others)}])
+        except ProviderError as exc:
+            raise HTTPException(502, str(exc)) from exc
+        return {"values": forms.parse_fill_answer(reply, fields)}
+
+    @app.post("/api/workspaces/{ws_id}/documents/{doc_id}/form/fill")
+    async def form_fill(doc_id: str, body: FormFillIn, ws: Workspace = Depends(workspace)):
+        doc, original = _editable(ws, doc_id)
+        fields = {f["name"]: f for f in await asyncio.to_thread(forms.list_fields, original)}
+        values = {k: v for k, v in body.values.items() if k in fields}
+        data, marks = await asyncio.to_thread(forms.fill, original, values)
+        pv = await asyncio.to_thread(privacy.preview, "pdf", original, data, marks)
+        return _file_json(doc, data, "filled", {"preview": pv, "highlight": []})
 
     @app.post("/api/workspaces/{ws_id}/documents/{doc_id}/pii")
     async def find_personal_data(doc_id: str, request: Request, ws: Workspace = Depends(workspace)):
         """Personal data found by patterns, plus names and addresses found by the model (checked against the text)."""
         doc, original = _editable(ws, doc_id)
         text = await asyncio.to_thread(privacy.pdf_text, original) if doc.kind == "pdf" else ws.texts[doc_id]
+        # for spreadsheets, drop the "A1: " cell labels so values match the file
+        if doc.kind == "xlsx":
+            text = re.sub(r"(?m)(^|\| )[A-Z]+\d+: ", r"\1", text)
+            text = re.sub(r"(?m)^Sheet: .*$", "", text)
         items = privacy.detect_pii(text)
+        if doc.kind == "xlsx":
+            from . import office
+            known = {i["value"] for i in items}
+            items += [{"type": "name", "value": v} for v in office.xlsx_name_cells(original) if v not in known]
         model_used = False
         try:
             reply = await request.app.state.chat.complete(privacy.PII_SYSTEM, [{"role": "user",
@@ -350,11 +415,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Remove the given terms for real (PDF redaction / Word replacement) and wipe metadata. Nothing is kept."""
         doc, original = _editable(ws, doc_id)
         terms = [t.strip() for t in body.terms if t.strip()]
-        if doc.kind == "pdf":
-            data, counts, marks = await asyncio.to_thread(privacy.redact_pdf, original, terms)
-        else:
-            (data, counts), marks = await asyncio.to_thread(privacy.redact_docx, original, terms), []
-        pv = await asyncio.to_thread(privacy.preview, doc.kind, original, data, marks)
+        data, counts, marks = await asyncio.to_thread(privacy.redact, doc.kind, original, terms)
+        pv = await asyncio.to_thread(privacy.preview, doc.kind, original, data, marks, ["\u2588\u2588\u2588"])
         return _file_json(doc, data, "redacted", {"counts": counts, "preview": pv, "highlight": ["\u2588\u2588\u2588"]})
 
     @app.delete("/api/workspaces/{ws_id}/documents/{doc_id}")
@@ -387,7 +449,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         else:
             sources = []
 
-        layout = body.keep_layout and bool(ws.originals)
+        layout = body.keep_layout and any(d.editable for d in ws.documents.values())
         system = build_system_prompt(ws.system_prompt, f"{s.llm_model} (via {s.llm_provider})", layout)
         history = ws.history[-2 * s.history_turns:]
         # History keeps plain questions; only the current turn carries the document text.
@@ -400,7 +462,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             changes = layout_edit.parse_changes(answer)
             if not changes:
                 return None
-            docs = [d for d in ws.documents.values() if d.id in ws.originals]
+            docs = [d for d in ws.documents.values() if d.id in ws.originals and d.editable]
             if not docs:
                 return {"doc_id": None, "changes": [{**c, "status": "fail", "message": "No editable file."} for c in changes]}
             target = max(docs, key=lambda d: sum(bool(privacy.locate(ws.texts[d.id], c["find"])) for c in changes))

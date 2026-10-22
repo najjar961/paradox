@@ -232,12 +232,18 @@ function renderDocs(pending = []) {
       await api(`/api/workspaces/${state.current.id}/documents/${d.id}`, { method: "DELETE" });
       await loadWorkspaces(state.current.id);
     });
-    if (!d.editable) { li.append(name, meta, del); return li; }
+    if (!d.kind) { li.append(name, meta, del); return li; }
     const row = document.createElement("div");
     row.className = "doc-row";
     row.append(name, meta, del);
     const tools = document.createElement("div");
     tools.className = "doc-tools";
+    if (d.scanned) meta.textContent = "scan · text recognised";
+    if (d.form) {
+      const fill = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Fill in form" });
+      fill.addEventListener("click", () => openForm(d));
+      tools.append(fill);
+    }
     const redact = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Remove personal data" });
     redact.addEventListener("click", () => openRedaction(d));
     tools.append(redact);
@@ -423,7 +429,9 @@ $("#modal-close").addEventListener("click", closeModal);
 $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 
-const MIME = { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
+const MIME = { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation" };
 
 function b64ToBytes(b64) {
   const bin = atob(b64);
@@ -527,7 +535,7 @@ function renderChanges(msgEl, answer, checked) {
   });
   const btn = el("button", { type: "button", className: "primary", textContent: target ? `Preview changes to ${target.name}` : "Preview changes" });
   const actions = el("div", { className: "changes-actions" }, target ? btn
-    : el("small", { className: "muted", textContent: "Upload the original PDF or Word file to apply these changes." }));
+    : el("small", { className: "muted", textContent: "Upload the original file to apply these changes." }));
   textEl.append(el("div", { className: "changes" },
     el("div", { className: "changes-head", textContent: `${changes.length} ${changes.length === 1 ? "change" : "changes"} to your original file` }),
     el("ol", {}, ...rows.map((r) => r.li)), actions));
@@ -558,6 +566,85 @@ function renderChanges(msgEl, answer, checked) {
     } finally {
       btn.disabled = false;
       btn.textContent = label;
+    }
+  });
+}
+
+// ---- fill in PDF forms
+
+async function openForm(d) {
+  let fields;
+  try {
+    fields = (await api(`/api/workspaces/${state.current.id}/documents/${d.id}/form`)).fields;
+  } catch (err) { if (err.message !== "unauthorised") toast(err.message); return; }
+  const others = (state.current.documents || []).filter((x) => x.id !== d.id);
+  const info = el("textarea", { id: "form-info", rows: 3, maxLength: 8000,
+    placeholder: "Optional: tell Paradox what to fill in, e.g. your name, address, date of birth." });
+  const useDocs = el("input", { type: "checkbox", id: "form-docs", checked: others.length > 0, disabled: !others.length });
+  const suggest = el("button", { type: "button", className: "ghost", textContent: "Fill with AI" });
+  const inputs = new Map();
+  const list = el("div", { className: "form-fields" }, ...fields.map((f, i) => {
+    const id = `ff-${i}`;
+    let input;
+    if (f.type === "checkbox") input = el("input", { type: "checkbox", id, checked: !!f.value });
+    else if (f.type === "choice" || f.type === "radio") {
+      input = el("select", { id }, el("option", { value: "", textContent: "—" }),
+        ...(f.options || []).map((o) => el("option", { value: o, textContent: o, selected: o === f.value })));
+    } else input = el("input", { type: "text", id, value: f.value || "", maxLength: 500 });
+    inputs.set(f.name, { f, input });
+    return el("div", { className: `form-row ${f.type === "checkbox" ? "is-check" : ""}` },
+      el("label", { htmlFor: id, textContent: f.label }), input);
+  }));
+  const go = el("button", { type: "button", className: "primary", textContent: "Preview filled form" });
+  openModal(`Fill in ${d.name}`,
+    [el("div", { className: "form-ai" }, info,
+      el("div", { className: "form-ai-row" },
+        el("label", { className: "switch", htmlFor: "form-docs" }, useDocs,
+          el("span", { textContent: others.length ? `Use my other documents (${others.length})` : "No other documents uploaded" })),
+        suggest)),
+     el("p", { className: "small muted", textContent: `${fields.length} fields. Check every value before you download.` }), list],
+    [el("button", { type: "button", className: "ghost", textContent: "Cancel", onclick: closeModal }), go]);
+
+  suggest.addEventListener("click", async () => {
+    suggest.disabled = true;
+    suggest.textContent = "Filling…";
+    try {
+      const res = await api(`/api/workspaces/${state.current.id}/documents/${d.id}/form/suggest`,
+        { method: "POST", body: { info: info.value, use_documents: useDocs.checked } });
+      let n = 0;
+      for (const [name, v] of Object.entries(res.values)) {
+        const x = inputs.get(name);
+        if (!x) continue;
+        if (x.f.type === "checkbox") x.input.checked = !!v; else x.input.value = String(v);
+        x.input.closest(".form-row").classList.add("ai-filled");
+        n++;
+      }
+      toast(n ? `Filled ${n} ${n === 1 ? "field" : "fields"}. Please check them.` : "Paradox found nothing to fill in. Add details above.");
+    } catch (err) {
+      if (err.message !== "unauthorised") toast(err.message);
+    } finally {
+      suggest.disabled = false;
+      suggest.textContent = "Fill with AI";
+    }
+  });
+
+  go.addEventListener("click", async () => {
+    const values = {};
+    for (const [name, { f, input }] of inputs) {
+      if (f.type === "checkbox") values[name] = input.checked;
+      else if (input.value !== "") values[name] = input.value;
+    }
+    go.disabled = true;
+    go.textContent = "Filling in…";
+    try {
+      const res = await api(`/api/workspaces/${state.current.id}/documents/${d.id}/form/fill`, { method: "POST", body: { values } });
+      openModal(`Preview: ${d.name} filled in`, previewView(previewViews(res.preview, [], false), "Filled fields are highlighted. The fields stay editable."),
+        [el("button", { type: "button", className: "ghost", textContent: "Back", onclick: () => { closeModal(); openForm(d); } }),
+         downloadButton(res, "pdf")]);
+    } catch (err) {
+      if (err.message !== "unauthorised") toast(err.message);
+      go.disabled = false;
+      go.textContent = "Preview filled form";
     }
   });
 }

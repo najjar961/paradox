@@ -182,18 +182,28 @@ def redact_pdf(data: bytes, terms: list[str]) -> tuple[bytes, list[int], list[di
     for page in doc:
         hit_any = False
         seen = set()
+        # OCR text layers (Tesseract's GlyphLessFont) are narrower than the printed letters: pad more.
+        scanned = any(span.get("font") == "GlyphLessFont" for b in page.get_text("dict")["blocks"]
+                      for line in b.get("lines", []) for span in line["spans"])
         for i, term in enumerate(terms):
             # PyMuPDF's search ignores case, so one search finds every spelling.
+            prev = None
             for quads in page.search_for(term, quads=True, flags=pymupdf.TEXT_DEHYPHENATE):
                 r = quads.rect
+                # one match can come back as several boxes (one per word or line): count it once
+                same_hit = prev is not None and (
+                    (abs(r.y0 - prev.y0) < 2 and 0 <= r.x0 - prev.x1 < r.height * 2.5) or (0 <= r.y0 - prev.y1 < r.height))
+                prev = r
                 key = (round(r.x0), round(r.y0), round(r.x1), round(r.y1))
                 if key in seen:
                     continue
                 seen.add(key)
-                r = pymupdf.Rect(r.x0 - 0.5, r.y0 - 0.5, r.x1 + 0.5, r.y1 + 0.5)
+                px = r.height * 0.6 if scanned else 0.5
+                py = r.height * 0.25 if scanned else 0.5
+                r = pymupdf.Rect(r.x0 - px, r.y0 - py, r.x1 + px, r.y1 + py)
                 page.add_redact_annot(r, fill=(0, 0, 0))
                 marks.append({"page": page.number, "rect": [r.x0, r.y0, r.x1, r.y1]})
-                counts[i] += 1
+                counts[i] += 0 if same_hit else 1
                 hit_any = True
         if hit_any:
             page.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_PIXELS, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE)
@@ -284,11 +294,27 @@ def docx_html(data: bytes) -> str:
     return mammoth.convert_to_html(io.BytesIO(data)).value
 
 
-def preview(kind: str, before: bytes, after: bytes, marks: list[dict]) -> dict:
+def preview(kind: str, before: bytes, after: bytes, marks: list[dict], highlight: list[str] | None = None) -> dict:
     if kind == "pdf":
-        pages = sorted({m["page"] for m in marks})[:4] or [0]
-        return {"kind": "pdf", "marks": marks, "after": render_pages(after, pages), "before": render_pages(before, pages)}
+        pages = sorted({m["page"] for m in marks if "page" in m})[:4] or [0]
+        return {"kind": "pdf", "marks": [m for m in marks if "page" in m],
+                "after": render_pages(after, pages), "before": render_pages(before, pages)}
+    if kind in ("xlsx", "pptx"):
+        from . import office
+        to_html = office.xlsx_html if kind == "xlsx" else office.pptx_html
+        return {"kind": "html", "after_html": to_html(after, highlight), "before_html": to_html(before)}
     return {"kind": "docx", "after_html": docx_html(after), "before_html": docx_html(before)}
+
+
+def redact(kind: str, data: bytes, terms: list[str]) -> tuple[bytes, list[int], list[dict]]:
+    if kind == "pdf":
+        return redact_pdf(data, terms)
+    if kind == "docx":
+        out, counts = redact_docx(data, terms)
+        return out, counts, []
+    from . import office
+    out, counts = (office.xlsx_redact if kind == "xlsx" else office.pptx_redact)(data, terms)
+    return out, counts, []
 
 
 def unicode_safe(text: str) -> str:

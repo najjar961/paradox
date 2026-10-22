@@ -29,8 +29,10 @@ class Document:
     name: str
     chars: int
     chunks: int
-    kind: str = ""          # "pdf" or "docx" when the original can be edited in place
-    editable: bool = False
+    kind: str = ""          # "pdf", "docx", "xlsx" or "pptx" when the original is kept for editing
+    editable: bool = False  # in-place text edits keep the layout
+    scanned: bool = False   # text came from OCR (redaction yes, text edits no)
+    form: bool = False      # PDF with fillable fields
 
 
 @dataclass

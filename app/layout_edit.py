@@ -654,4 +654,7 @@ def apply(kind: str, data: bytes, changes: list[dict]) -> tuple[bytes, list[dict
         return apply_pdf(data, changes)
     if kind == "docx":
         return apply_docx(data, changes)
-    raise ValueError("Only PDF and Word files can be edited in place.")
+    if kind in ("xlsx", "pptx"):
+        from . import office
+        return (office.xlsx_apply if kind == "xlsx" else office.pptx_apply)(data, changes)
+    raise ValueError("Only PDF, Word, Excel and PowerPoint files can be edited in place.")

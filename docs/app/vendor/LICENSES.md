@@ -13,6 +13,9 @@ These are unmodified copies, served from this site so that visitors' browsers ne
 | fonts/Carlito-*.ttf | [Carlito](https://github.com/googlefonts/carlito) (metric-compatible with Calibri) | 20130920 | SIL Open Font License 1.1 |
 | fonts/LiberationSans-*.ttf, fonts/LiberationSerif-*.ttf | [Liberation Fonts](https://github.com/liberationfonts/liberation-fonts) (metric-compatible with Arial and Times New Roman) | 2.x | SIL Open Font License 1.1 |
 | mupdf/* | [MuPDF.js](https://github.com/ArtifexSoftware/mupdf.js) | 1.28.1 | AGPL-3.0 |
+| tesseract/tesseract.min.js, tesseract/worker.min.js | [Tesseract.js](https://github.com/naptha/tesseract.js) | 7.0.0 | Apache-2.0 |
+| tesseract/core/* | [tesseract.js-core](https://github.com/naptha/tesseract.js-core) (Tesseract OCR compiled to WebAssembly) | 7.0.0 | Apache-2.0 |
+| tesseract/lang/deu, eng | [tessdata_best (integerised)](https://github.com/tesseract-ocr/tessdata_best) via @tesseract.js-data | 4.0.0 | Apache-2.0 |
 | jszip.min.js | [JSZip](https://github.com/Stuk/jszip) | 3.10.2 | MIT |
 
 The AI models themselves are downloaded by the visitor's browser from Hugging Face ([mlc-ai](https://huggingface.co/mlc-ai)) and carry their own licences: Qwen2.5 1.5B and 7B under Apache-2.0, Llama 3.2 3B under the Llama 3.2 Community License (Built with Llama).

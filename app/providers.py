@@ -174,6 +174,11 @@ class ChatModel:
             lines = [l.strip() for l in (m.group(1) if m else "").splitlines() if l.strip()]
             yield f"NAME: {lines[0]}" if lines else "NONE"
             return
+        if "You fill in forms" in system:
+            info = re.search(r"<info>\n(.*?)\n</info>", last, re.S)
+            pairs = dict(re.findall(r"^\s*([^:\n]+?)\s*:\s*(.+?)\s*$", info.group(1), re.M)) if info else {}
+            yield json.dumps(pairs, ensure_ascii=False)
+            return
         if "correct FIND" in system:
             pairs = re.findall(r"Closest text in the document: (.+)\nYour REPLACE: (.*)", last)
             yield "\n\n".join(f"FIND: {a}\nREPLACE: {a.upper()}" for a, _ in pairs)

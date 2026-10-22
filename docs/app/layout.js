@@ -723,6 +723,9 @@ export function redactPdf(mupdf, bytes, terms) {
     const page = doc.loadPage(p);
     let any = false;
     const seen = new Set();
+    // OCR text layers (Tesseract's GlyphLessFont) are narrower than the printed letters: pad more.
+    let scanned = false;
+    page.toStructuredText().walk({ onChar(c, o, font) { if (!scanned && /GlyphLess/i.test(font.getName())) scanned = true; } });
     terms.forEach((term, i) => {
       for (const variant of caseVariants(term)) {
         for (const hit of page.search(variant)) {
@@ -731,7 +734,9 @@ export function redactPdf(mupdf, bytes, terms) {
           seen.add(key);
           for (const q of hit) {
             const xs = [q[0], q[2], q[4], q[6]], ys = [q[1], q[3], q[5], q[7]];
-            const r = [Math.min(...xs) - 0.5, Math.min(...ys) - 0.5, Math.max(...xs) + 0.5, Math.max(...ys) + 0.5];
+            const h = Math.max(...ys) - Math.min(...ys);
+            const px = scanned ? h * 0.6 : 0.5, py = scanned ? h * 0.25 : 0.5;
+            const r = [Math.min(...xs) - px, Math.min(...ys) - py, Math.max(...xs) + px, Math.max(...ys) + py];
             page.createAnnotation("Redact").setRect(r);
             marks.push({ page: p, rect: r });
           }
@@ -799,4 +804,101 @@ export function renderPages(mupdf, bytes, pages, scale = 1.6) {
     out.push({ page: p, png: pm.asPNG().slice(), width: b[2] - b[0], height: b[3] - b[1] });
   }
   return out;
+}
+
+// ------------------------------------------------------------------ PDF forms
+
+function fieldLabel(words, b) {
+  const midY = (b[1] + b[3]) / 2, h = b[3] - b[1];
+  const left = words.filter((w) => w.x1 <= b[0] + 2 && Math.abs((w.y0 + w.y1) / 2 - midY) < Math.max(6, h * 0.6) && b[0] - w.x1 < 260);
+  if (left.length) return left.sort((a, c) => a.x0 - c.x0).map((w) => w.t).join(" ").replace(/[\s:]+$/, "");
+  const right = words.filter((w) => w.x0 >= b[2] - 2 && Math.abs((w.y0 + w.y1) / 2 - midY) < Math.max(6, h * 0.8) && w.x0 - b[2] < 30);
+  if (right.length) {
+    const line = words.filter((w) => w.line === right[0].line && w.x0 >= b[2] - 2);
+    return line.sort((a, c) => a.x0 - c.x0).map((w) => w.t).join(" ").replace(/[\s:]+$/, "");
+  }
+  const above = words.filter((w) => b[1] - w.y1 > 0 && b[1] - w.y1 < 16 && w.x1 > b[0] - 4 && w.x0 < b[2]);
+  return above.sort((a, c) => a.x0 - c.x0).map((w) => w.t).join(" ").replace(/[\s:]+$/, "");
+}
+
+const FIELD_TYPES = { text: "text", checkbox: "checkbox", combobox: "choice", listbox: "choice" };
+
+// Fillable fields of a PDF: [{ name, label, type, value, options, page }]
+export function listFields(mupdf, bytes) {
+  const doc = mupdf.Document.openDocument(bytes, "application/pdf");
+  const out = [], seen = new Set();
+  for (let p = 0; p < doc.countPages(); p++) {
+    const page = doc.loadPage(p);
+    const widgets = page.getWidgets?.() || [];
+    if (!widgets.length) continue;
+    const words = pageWords(page);
+    for (const w of widgets) {
+      const type = FIELD_TYPES[w.getFieldType()];
+      const name = w.getName();
+      if (!type || !name || w.isReadOnly() || seen.has(name)) continue;
+      seen.add(name);
+      const tu = (w.getLabel() || "").trim();
+      const label = (tu && tu !== name ? tu : "") || fieldLabel(words, w.getBounds()) || name;
+      const value = w.getValue();
+      const field = { name, label: label.slice(0, 120), type, page: p,
+        value: type === "checkbox" ? !!value && value !== "Off" : value || "" };
+      if (type === "choice") field.options = w.getOptions();
+      out.push(field);
+    }
+  }
+  return out;
+}
+
+export const FILL_SYSTEM = "You fill in forms. You get the form's fields and information about the person. Reply with one JSON object that maps field names to values, and nothing else. Only fill fields you have information for; leave the rest out. For checkbox fields use true or false. For choice fields use exactly one of the listed options. Write dates and numbers the way the form's language expects. Never invent personal data that is not in the information.";
+
+export function fillPrompt(fields, info, documents) {
+  const spec = fields.map(({ name, label, type, options }) => (options ? { name, label, type, options } : { name, label, type }));
+  const parts = [`Form fields:\n${JSON.stringify(spec, null, 1)}`];
+  if (info.trim()) parts.push(`What the person told you:\n<info>\n${info.trim()}\n</info>`);
+  if (documents.trim()) parts.push(`The person's other documents:\n<documents>\n${documents.trim()}\n</documents>`);
+  parts.push("Reply with the JSON object only.");
+  return parts.join("\n\n");
+}
+
+export function parseFillAnswer(answer, fields) {
+  const m = /\{[\s\S]*\}/.exec(answer);
+  if (!m) return {};
+  let raw;
+  try { raw = JSON.parse(m[0]); } catch { return {}; }
+  const byName = new Map(fields.map((f) => [f.name, f]));
+  const byLabel = new Map(fields.map((f) => [f.label.toLowerCase(), f]));
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const f = byName.get(k) || byLabel.get(String(k).toLowerCase());
+    if (!f || v == null) continue;
+    if (f.type === "checkbox") out[f.name] = v === true || ["true", "yes", "ja", "x", "1", "on"].includes(String(v).trim().toLowerCase());
+    else if (f.type === "choice") {
+      const opt = (f.options || []).find((o) => o.toLowerCase() === String(v).trim().toLowerCase());
+      if (opt) out[f.name] = opt;
+    } else if (String(v).trim()) out[f.name] = String(v).trim().slice(0, 500);
+  }
+  return out;
+}
+
+export function fillForm(mupdf, bytes, values) {
+  const doc = mupdf.Document.openDocument(bytes, "application/pdf");
+  const marks = [];
+  for (let p = 0; p < doc.countPages(); p++) {
+    const page = doc.loadPage(p);
+    for (const w of page.getWidgets?.() || []) {
+      const name = w.getName();
+      if (!(name in values)) continue;
+      const v = values[name];
+      const type = FIELD_TYPES[w.getFieldType()];
+      if (type === "checkbox") {
+        const on = !!w.getValue() && w.getValue() !== "Off";
+        if (on !== !!v) w.toggle();
+      } else if (type === "choice") w.setChoiceValue(String(v));
+      else if (type === "text") w.setTextValue(String(v));
+      else continue;
+      w.update?.();
+      marks.push({ page: p, rect: w.getBounds() });
+    }
+  }
+  return { bytes: doc.saveToBuffer("garbage=compact,compress").asUint8Array().slice(), marks };
 }

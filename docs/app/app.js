@@ -11,7 +11,8 @@
 
 import * as pdfjs from "./vendor/pdf.min.mjs";
 import { parseChanges, applyPdf, applyDocx, locate, closestPassage, detectPII, piiPrompt, parsePiiAnswer,
-  redactPdf, redactDocx, renderPages, PII_LABELS } from "./layout.js";
+  redactPdf, redactDocx, renderPages, PII_LABELS, listFields, fillForm, fillPrompt, parseFillAnswer, FILL_SYSTEM } from "./layout.js";
+import * as office from "./office.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
 
@@ -218,6 +219,9 @@ class FakeEngine {
         if (/find personal data/i.test(sys)) {
           const lines = (/<document>\n([\s\S]*?)<\/document>/.exec(user)?.[1] || "").split("\n").map((l) => l.trim()).filter(Boolean);
           content = lines.slice(0, 1).map((l) => `NAME: ${l}`).join("\n");
+        } else if (/You fill in forms/i.test(sys)) {
+          const info = /<info>\n([\s\S]*?)\n<\/info>/.exec(user)?.[1] || "";
+          content = JSON.stringify(Object.fromEntries([...info.matchAll(/^\s*([^:\n]+?)\s*:\s*(.+?)\s*$/gm)].map((m) => [m[1], m[2]])));
         } else if (/correct FIND/i.test(sys)) {
           content = [...user.matchAll(/Closest text in the document: (.+)\nYour REPLACE: (.*)/g)]
             .map((m) => `FIND: ${m[1]}\nREPLACE: ${m[1].toUpperCase()}`).join("\n\n");
@@ -349,7 +353,7 @@ function search(query, k) {
 }
 
 function renderDocs(pending = []) {
-  $("#layout-row").hidden = !state.docs.some((d) => d.original);
+  $("#layout-row").hidden = !state.docs.some((d) => d.editable);
   const list = $("#doc-list");
   const items = state.docs.map((d) => {
     const li = document.createElement("li");
@@ -360,8 +364,14 @@ function renderDocs(pending = []) {
     del.addEventListener("click", () => { state.docs = state.docs.filter((x) => x !== d); renderDocs(); });
     li.append(name, meta, del);
     if (!d.original) return li;
+    if (d.scanned) meta.textContent = "scan · text recognised";
     const tools = document.createElement("div");
     tools.className = "doc-tools";
+    if (d.form) {
+      const fill = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Fill in form" });
+      fill.addEventListener("click", () => openForm(d));
+      tools.append(fill);
+    }
     const redact = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Remove personal data" });
     redact.addEventListener("click", () => openRedaction(d));
     tools.append(redact);
@@ -380,22 +390,101 @@ function renderDocs(pending = []) {
   list.replaceChildren(...items);
 }
 
+const IMAGE_EXT = ["png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff"];
+const OFFICE = ["docx", "xlsx", "pptx"];
+
+// Text recognition for scans and photos, fully in the browser (Tesseract.js, files served from this site).
+let ocrWorker = null;
+async function getOcrWorker(onProgress) {
+  if (!window.Tesseract) await new Promise((resolve, reject) => {
+    const sc = Object.assign(document.createElement("script"), { src: "vendor/tesseract/tesseract.min.js", onload: resolve, onerror: reject });
+    document.head.append(sc);
+  });
+  if (!ocrWorker) {
+    const base = new URL("vendor/tesseract/", location.href).href;
+    ocrWorker = await window.Tesseract.createWorker(["deu", "eng"], 1, {
+      workerPath: `${base}worker.min.js`, corePath: `${base}core/`, langPath: `${base}lang`,
+      gzip: true, cacheMethod: "none", workerBlobURL: true,
+      logger: (m) => { if (m.status === "recognizing text" && ocrWorker?._onProgress) ocrWorker._onProgress(m.progress); },
+    });
+  }
+  ocrWorker._onProgress = onProgress;
+  return ocrWorker;
+}
+
+const OCR_DPI = 200;
+
+// Scanned PDF or photo -> searchable PDF (the page image plus invisible text), page by page.
+async function ocrToPdf(bytes, mimeType, onProgress) {
+  const mupdf = await loadMupdf();
+  const src = mupdf.Document.openDocument(bytes, mimeType);
+  const pages = src.countPages();
+  if (pages > 40) throw new Error("Scans with more than 40 pages are not supported.");
+  const worker = await getOcrWorker(() => {});
+  await worker.setParameters({ user_defined_dpi: String(OCR_DPI) });
+  const outDoc = new mupdf.PDFDocument();
+  for (let p = 0; p < pages; p++) {
+    worker._onProgress = (x) => onProgress((p + x) / pages);
+    const png = src.loadPage(p).toPixmap(mupdf.Matrix.scale(OCR_DPI / 72, OCR_DPI / 72), mupdf.ColorSpace.DeviceGray, false).asPNG();
+    const { data } = await worker.recognize(new Blob([png], { type: "image/png" }), {}, { pdf: true });
+    const pagePdf = new mupdf.PDFDocument(new Uint8Array(data.pdf));
+    outDoc.graftPage(-1, pagePdf, 0);
+  }
+  onProgress(1);
+  return outDoc.saveToBuffer("garbage=compact,compress").asUint8Array().slice();
+}
+
+async function pdfInfo(bytes) {
+  const mupdf = await loadMupdf();
+  const doc = mupdf.Document.openDocument(bytes, "application/pdf");
+  const parts = [];
+  let images = 0;
+  for (let p = 0; p < doc.countPages(); p++) {
+    const st = doc.loadPage(p).toStructuredText("preserve-images");
+    st.walk({ onImageBlock() { images++; } });
+    parts.push(st.asText());
+  }
+  return { text: parts.join("\n\n"), pages: doc.countPages(), images };
+}
+
 async function addFiles(files) {
   const pending = files.map((f) => f.name);
-  renderDocs(pending);
+  const progress = new Map();
+  const show = () => renderDocs(pending.map((n) => (progress.has(n) ? `${n} — reading text from scan… ${Math.round(progress.get(n) * 100)}%` : n)));
+  show();
   for (const file of files) {
     try {
       if (file.size > MAX_FILE_MB * 1024 * 1024) throw new Error(`Larger than ${MAX_FILE_MB} MB.`);
-      const text = normalise(await extractText(file));
-      if (!text) throw new Error("The file contains no text.");
-      const kind = ext(file.name);
-      const original = kind === "pdf" || kind === "docx" ? new Uint8Array(await file.arrayBuffer()) : null;
-      state.docs.push({ id: crypto.randomUUID(), name: file.name, text, chunks: chunkText(text), kind, original });
+      let kind = ext(file.name), name = file.name, text, scanned = false;
+      let original = new Uint8Array(await file.arrayBuffer());
+      const onProgress = (x) => { progress.set(file.name, x); show(); };
+      if (IMAGE_EXT.includes(kind)) {
+        original = await ocrToPdf(original, file.type || `image/${kind}`, onProgress);
+        kind = "pdf"; name = file.name.replace(/\.[^.]+$/, ".pdf"); scanned = true;
+        text = (await pdfInfo(original)).text;
+      } else if (kind === "pdf") {
+        const info = await pdfInfo(original);
+        if (info.text.replace(/\s+/g, "").length < 40 * info.pages && info.images > 0) {
+          original = await ocrToPdf(original, "application/pdf", onProgress);
+          scanned = true;
+          text = (await pdfInfo(original)).text;
+        } else text = await extractText(file);
+      } else if (kind === "xlsx") text = await office.xlsxText(window.JSZip, original);
+      else if (kind === "pptx") text = await office.pptxText(window.JSZip, original);
+      else text = await extractText(file);
+      text = normalise(text || "");
+      if (!text) throw new Error(scanned ? "No text could be recognised in this scan." : "The file contains no text.");
+      const keep = kind === "pdf" || OFFICE.includes(kind);
+      const form = kind === "pdf" && !scanned && listFields(await loadMupdf(), original).length > 0;
+      state.docs.push({ id: crypto.randomUUID(), name, text, chunks: chunkText(text), kind,
+        original: keep ? original : null, scanned, editable: keep && !scanned, form });
     } catch (err) {
+      console.error(err);
       toast(`${file.name}: ${err.message || err}`);
     }
+    progress.delete(file.name);
     pending.shift();
-    renderDocs(pending);
+    show();
   }
   if (window.matchMedia("(max-width: 860px)").matches && state.docs.length) $("#side").classList.remove("open");
 }
@@ -709,7 +798,9 @@ function el(tag, props = {}, ...children) {
 
 // ---- preview
 
-const MIME = { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
+const MIME = { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation" };
 
 async function pdfPreview(before, after, marks, black) {
   const mupdf = await loadMupdf();
@@ -785,7 +876,19 @@ function previewView(views, note) {
 
 async function editOriginal(doc, changes) {
   if (doc.kind === "pdf") return applyPdf(await loadMupdf(), doc.original, changes, { loadFont });
+  if (doc.kind === "xlsx") return office.xlsxApply(window.JSZip, doc.original, changes);
+  if (doc.kind === "pptx") return office.pptxApply(window.JSZip, doc.original, changes);
   return applyDocx(window.JSZip, doc.original, changes);
+}
+
+async function htmlPreview(kind, before, after, highlight) {
+  const fn = kind === "xlsx" ? office.xlsxHtml : office.pptxHtml;
+  const wrap = async (bytes, hl) => {
+    const div = el("div", { className: "pv-docx" });
+    div.innerHTML = await fn(window.JSZip, bytes, hl);
+    return [div];
+  };
+  return { after: await wrap(after, highlight), before: await wrap(before, []) };
 }
 
 async function askModel(messages, maxTokens = 600) {
@@ -833,7 +936,7 @@ async function checkChanges(doc, changes, setStatus) {
 function renderChanges(msgEl, answer) {
   const { intro, changes } = parseChanges(answer.replace(/\s*\[stopped\]$/, ""));
   if (!changes.length) return;
-  const docs = state.docs.filter((d) => d.original);
+  const docs = state.docs.filter((d) => d.editable);
   const textEl = msgEl.querySelector(".text");
   textEl.innerHTML = intro ? renderMarkdown(intro) : "";
   msgEl.querySelectorAll(".actions button").forEach((b) => { if (b.textContent !== "Copy") b.remove(); });
@@ -862,7 +965,7 @@ function renderChanges(msgEl, answer) {
   const btns = el("div", { className: "changes-actions" }, btn);
   if (!target) {
     btn.remove();
-    btns.append(el("small", { className: "muted", textContent: "Upload the original PDF or Word file to apply these changes." }));
+    btns.append(el("small", { className: "muted", textContent: "Upload the original file to apply these changes." }));
   }
   const card = el("div", { className: "changes" },
     el("div", { className: "changes-head", textContent: `${changes.length} ${changes.length === 1 ? "change" : "changes"} to your original file` }),
@@ -887,9 +990,11 @@ function renderChanges(msgEl, answer) {
       });
       const ok = report.filter((r) => r.ok);
       if (!ok.length) { toast("None of the changes could be applied. See the list for details."); return; }
+      const replaced = ok.map((r) => changes[idx[r.index]].replace);
       const views = target.kind === "pdf"
-        ? await pdfPreview(target.original, bytes, ok.map((r) => r.mark).filter(Boolean), false)
-        : await docxPreview(target.original, bytes, ok.map((r) => changes[idx[r.index]].replace));
+        ? await pdfPreview(target.original, bytes, ok.map((r) => r.mark).filter((m) => m && "page" in m), false)
+        : target.kind === "docx" ? await docxPreview(target.original, bytes, replaced)
+          : await htmlPreview(target.kind, target.original, bytes, replaced);
       const name = target.name.replace(/(\.[^.]+)$/, "_edited$1");
       const dl = el("button", { type: "button", className: "primary", textContent: `Download ${name}` });
       dl.addEventListener("click", () => { saveBlob(new Blob([bytes], { type: MIME[target.kind] }), name); toast("Your edited file is downloading."); });
@@ -907,10 +1012,88 @@ function renderChanges(msgEl, answer) {
   });
 }
 
+// ---- fill in PDF forms
+
+async function openForm(d) {
+  const mupdf = await loadMupdf();
+  const fields = listFields(mupdf, d.original);
+  if (!fields.length) { toast("This PDF has no fillable fields."); return; }
+  const others = state.docs.filter((x) => x !== d);
+  const info = el("textarea", { id: "form-info", rows: 3, maxLength: 8000,
+    placeholder: "Optional: tell Paradox what to fill in, e.g. your name, address, date of birth." });
+  const useDocs = el("input", { type: "checkbox", id: "form-docs", checked: others.length > 0, disabled: !others.length });
+  const suggest = el("button", { type: "button", className: "ghost", textContent: "Fill with AI", disabled: !state.engine,
+    title: state.engine ? "" : "Load a model first" });
+  const inputs = new Map();
+  const list = el("div", { className: "form-fields" }, ...fields.map((f, i) => {
+    const id = `ff-${i}`;
+    let input;
+    if (f.type === "checkbox") input = el("input", { type: "checkbox", id, checked: !!f.value });
+    else if (f.type === "choice") input = el("select", { id }, el("option", { value: "", textContent: "—" }),
+      ...(f.options || []).map((o) => el("option", { value: o, textContent: o, selected: o === f.value })));
+    else input = el("input", { type: "text", id, value: f.value || "", maxLength: 500 });
+    inputs.set(f.name, { f, input });
+    return el("div", { className: `form-row ${f.type === "checkbox" ? "is-check" : ""}` }, el("label", { htmlFor: id, textContent: f.label }), input);
+  }));
+  const go = el("button", { type: "button", className: "primary", textContent: "Preview filled form" });
+  openModal(`Fill in ${d.name}`,
+    [el("div", { className: "form-ai" }, info, el("div", { className: "form-ai-row" },
+      el("label", { className: "switch", htmlFor: "form-docs" }, useDocs,
+        el("span", { textContent: others.length ? `Use my other documents (${others.length})` : "No other documents uploaded" })), suggest)),
+     el("p", { className: "small muted", textContent: `${fields.length} fields. Check every value before you download.` + (state.engine ? "" : " Load a model to let the AI fill them in.") }), list],
+    [el("button", { type: "button", className: "ghost", textContent: "Cancel", onclick: closeModal }), go]);
+
+  suggest.addEventListener("click", async () => {
+    suggest.disabled = true;
+    suggest.textContent = "Filling…";
+    try {
+      const docsText = useDocs.checked ? others.map((x) => `[${x.name}]\n${x.text.slice(0, 6000)}`).join("\n\n").slice(0, FULL_DOC_CHARS) : "";
+      const answer = await askModel([{ role: "system", content: FILL_SYSTEM }, { role: "user", content: fillPrompt(fields, info.value, docsText) }], 800);
+      const values = parseFillAnswer(answer, fields);
+      let n = 0;
+      for (const [name, v] of Object.entries(values)) {
+        const x = inputs.get(name);
+        if (!x) continue;
+        if (x.f.type === "checkbox") x.input.checked = !!v; else x.input.value = String(v);
+        x.input.closest(".form-row").classList.add("ai-filled");
+        n++;
+      }
+      toast(n ? `Filled ${n} ${n === 1 ? "field" : "fields"}. Please check them.` : "Paradox found nothing to fill in. Add details above.");
+    } catch (err) {
+      console.error(err);
+      toast("Could not fill the form with the AI.");
+    } finally {
+      suggest.disabled = false;
+      suggest.textContent = "Fill with AI";
+    }
+  });
+
+  go.addEventListener("click", async () => {
+    const values = {};
+    for (const [name, { f, input }] of inputs) {
+      if (f.type === "checkbox") values[name] = input.checked;
+      else if (input.value !== "") values[name] = input.value;
+    }
+    try {
+      const { bytes, marks } = fillForm(mupdf, d.original, values);
+      const views = await pdfPreview(d.original, bytes, marks, false);
+      const name = d.name.replace(/(\.[^.]+)$/, "_filled$1");
+      const dl = el("button", { type: "button", className: "primary", textContent: `Download ${name}` });
+      dl.addEventListener("click", () => { saveBlob(new Blob([bytes], { type: MIME.pdf }), name); toast("Your filled form is downloading."); });
+      openModal(`Preview: ${d.name} filled in`, previewView(views, "Filled fields are highlighted. The fields stay editable."),
+        [el("button", { type: "button", className: "ghost", textContent: "Back", onclick: () => { closeModal(); openForm(d); } }), dl]);
+    } catch (err) {
+      console.error(err);
+      toast("Could not fill in this form.");
+    }
+  });
+}
+
 // ---- remove personal data
 
 async function documentText(d) {
   if (d.kind !== "pdf") return d.text;
+  if (d.scanned) return d.text;
   const mupdf = await loadMupdf();
   const doc = mupdf.Document.openDocument(d.original, "application/pdf");
   const parts = [];
@@ -952,7 +1135,9 @@ async function openRedaction(d) {
   let text = "";
   try {
     text = await documentText(d);
+    if (d.kind === "xlsx") text = text.replace(/(^|\| )[A-Z]+\d+: /gm, "$1").replace(/^Sheet: .*$/gm, "");
     for (const f of detectPII(text)) addItem(f.type, f.value);
+    if (d.kind === "xlsx") for (const v of await office.xlsxNameCells(window.JSZip, d.original)) addItem("name", v);
     if (state.engine) {
       status.textContent = "Looking for names and addresses with the AI…";
       try {

@@ -490,3 +490,112 @@ def test_chat_checks_changes_and_repairs_them(app):
     changes = next(e for e in ev if e["type"] == "changes")["changes"]
     assert changes[0]["status"] == "ok"
     assert changes[1]["status"] == "fixed" and changes[1]["find"] == "Grundgebühr: 4.800,00 EUR"
+
+
+# ---------------------------------------------------------------- round 2: forms, scans, Excel, PowerPoint
+
+def _form_pdf() -> bytes:
+    import pymupdf
+    doc = pymupdf.open()
+    page = doc.new_page()
+    y = 100
+    for label, name in [("Vorname", "vorname"), ("Nachname", "nachname"), ("E-Mail", "email")]:
+        page.insert_text((72, y + 13), label + ":", fontsize=10.5)
+        w = pymupdf.Widget(); w.field_name = name; w.field_type = pymupdf.PDF_WIDGET_TYPE_TEXT
+        w.rect = pymupdf.Rect(220, y, 520, y + 18); page.add_widget(w); y += 30
+    page.insert_text((96, y + 11), "Ich stimme zu.", fontsize=10.5)
+    w = pymupdf.Widget(); w.field_name = "zustimmung"; w.field_type = pymupdf.PDF_WIDGET_TYPE_CHECKBOX
+    w.rect = pymupdf.Rect(72, y, 86, y + 14); page.add_widget(w)
+    return doc.tobytes()
+
+
+def _scan_pdf() -> bytes:
+    import pymupdf
+    src = pymupdf.open(stream=_sample_pdf(), filetype="pdf")
+    img = src[0].get_pixmap(dpi=200, colorspace=pymupdf.csGRAY).tobytes("jpg", jpg_quality=80)
+    doc = pymupdf.open(); page = doc.new_page(width=src[0].rect.width, height=src[0].rect.height)
+    page.insert_image(page.rect, stream=img)
+    return doc.tobytes(deflate=True)
+
+
+def test_form_fields_suggest_and_fill(app):
+    import base64, pymupdf
+    c = login(app, "alice")
+    ws = c.get("/api/workspaces").json()[0]
+    d = upload(c, ws["id"], "antrag.pdf", _form_pdf()).json()
+    assert d["form"] is True
+    fields = c.get(f"/api/workspaces/{ws['id']}/documents/{d['id']}/form").json()["fields"]
+    assert [f["label"] for f in fields] == ["Vorname", "Nachname", "E-Mail", "Ich stimme zu."]
+    sug = c.post(f"/api/workspaces/{ws['id']}/documents/{d['id']}/form/suggest",
+                 json={"info": "vorname: Lena\nNachname: Becker\nzustimmung: ja\nunbekannt: x", "use_documents": False}).json()
+    assert sug["values"] == {"vorname": "Lena", "nachname": "Becker", "zustimmung": True}
+    r = c.post(f"/api/workspaces/{ws['id']}/documents/{d['id']}/form/fill", json={"values": sug["values"]}).json()
+    filled = pymupdf.open(stream=base64.b64decode(r["file"]), filetype="pdf")
+    vals = {w.field_name: w.field_value for w in filled[0].widgets()}
+    assert vals["vorname"] == "Lena" and vals["nachname"] == "Becker" and vals["zustimmung"] not in ("Off", "", None)
+    assert r["filename"] == "antrag_filled.pdf" and r["preview"]["marks"]
+
+
+@pytest.mark.skipif(not __import__("shutil").which("tesseract"), reason="tesseract not installed")
+def test_scanned_pdf_and_photo_are_read_and_redactable(app):
+    import base64, pymupdf
+    c = login(app, "alice")
+    ws = c.get("/api/workspaces").json()[0]
+    d = upload(c, ws["id"], "scan.pdf", _scan_pdf()).json()
+    assert d["scanned"] is True and d["editable"] is False and d["chars"] > 50
+    events = chat(c, ws["id"], "Wie hoch ist die Grundgebühr?")
+    assert "4.800" in events[0]["sources"][0]["excerpt"] or "4.800" in json.dumps(events)
+    r = c.post(f"/api/workspaces/{ws['id']}/documents/{d['id']}/redact", json={"terms": ["4.800,00 EUR"]}).json()
+    assert r["counts"] == [1]
+    assert "4.800" not in pymupdf.open(stream=base64.b64decode(r["file"]), filetype="pdf")[0].get_text()
+    src = pymupdf.open(stream=_scan_pdf(), filetype="pdf")
+    photo = upload(c, ws["id"], "foto.png", src[0].get_images() and src.extract_image(src[0].get_images()[0][0])["image"]).json()
+    assert photo["name"] == "foto.pdf" and photo["scanned"] is True
+
+
+def _xlsx() -> bytes:
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    wb = Workbook(); ws = wb.active; ws.title = "Budget"
+    ws.append(["Position", "Betrag", "Verantwortlich"]); ws["A1"].font = Font(bold=True)
+    ws.append(["Messe", 12000, "Anna Schulz"]); ws.append(["Werbung", 8500, "Lena Becker"])
+    ws.append(["Summe", "=SUM(B2:B3)", ""])
+    buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
+
+
+def _pptx() -> bytes:
+    from pptx import Presentation
+    pr = Presentation(); s = pr.slides.add_slide(pr.slide_layouts[1]); s.shapes.title.text = "Ergebnisse"
+    tf = s.placeholders[1].text_frame; tf.text = "Umsatz: 4,2 Mio. EUR"
+    p = tf.add_paragraph(); r = p.add_run(); r.text = "Kontakt: "; r2 = p.add_run(); r2.text = "Lena Becker"; r2.font.bold = True
+    buf = io.BytesIO(); pr.save(buf); return buf.getvalue()
+
+
+def test_excel_edit_keeps_formulas_and_formatting(app):
+    import base64
+    from openpyxl import load_workbook
+    c = login(app, "alice")
+    ws = c.get("/api/workspaces").json()[0]
+    d = upload(c, ws["id"], "budget.xlsx", _xlsx()).json()
+    assert d["editable"] and d["kind"] == "xlsx"
+    r = c.post(f"/api/workspaces/{ws['id']}/documents/{d['id']}/preview",
+               json={"changes": [{"find": "8.500", "replace": "9.200"}, {"find": "Messe", "replace": "Messe München"}]}).json()
+    assert [x["ok"] for x in r["report"]] == [True, True] and "Messe München" in r["preview"]["after_html"]
+    wb = load_workbook(io.BytesIO(base64.b64decode(r["file"])))
+    assert wb["Budget"]["B3"].value == 9200 and wb["Budget"]["B4"].value == "=SUM(B2:B3)" and wb["Budget"]["A1"].font.bold
+    r = c.post(f"/api/workspaces/{ws['id']}/documents/{d['id']}/redact", json={"terms": ["Lena Becker"]}).json()
+    assert r["counts"] == [1] and "Lena" not in base64.b64decode(r["file"]).decode("latin-1")
+
+
+def test_powerpoint_edit_keeps_bold_and_redacts(app):
+    import base64
+    from pptx import Presentation
+    c = login(app, "alice")
+    ws = c.get("/api/workspaces").json()[0]
+    d = upload(c, ws["id"], "bericht.pptx", _pptx()).json()
+    r = c.post(f"/api/workspaces/{ws['id']}/documents/{d['id']}/preview",
+               json={"changes": [{"find": "Umsatz: 4,2 Mio. EUR", "replace": "Umsatz: 4,5 Mio. EUR"}]}).json()
+    assert r["report"][0]["ok"] and "4,5 Mio" in r["preview"]["after_html"]
+    r = c.post(f"/api/workspaces/{ws['id']}/documents/{d['id']}/redact", json={"terms": ["Lena Becker"]}).json()
+    runs = Presentation(io.BytesIO(base64.b64decode(r["file"]))).slides[0].placeholders[1].text_frame.paragraphs[1].runs
+    assert runs[1].text.startswith("█") and runs[1].font.bold

@@ -37,9 +37,9 @@
       <section class="card">
         <h2>Documents</h2>
         <label id="drop" class="drop" for="file-input">
-          <input id="file-input" type="file" multiple hidden accept=".pdf,.docx,.txt,.md,.markdown,.csv,.json,.log,.html,.htm">
+          <input id="file-input" type="file" multiple hidden accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.markdown,.csv,.json,.log,.html,.htm,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp">
           <span>Drop files or <u>browse</u></span>
-          <small class="muted">PDF, Word, text · read on this device</small>
+          <small class="muted">PDF, Word, Excel, PowerPoint, scans · read on this device</small>
         </label>
         <ul id="doc-list" class="docs"></ul>
       </section>
@@ -71,7 +71,7 @@
 
       <div id="layout-row" class="layout-row" hidden>
         <label class="switch"><input type="checkbox" id="keep-layout" checked> <span>Keep original layout</span></label>
-        <small class="muted">Changes are applied to your original PDF or Word file.</small>
+        <small class="muted">Changes are applied to your original file.</small>
       </div>
       <form id="chat-form" class="composer">
         <textarea id="chat-input" rows="1" maxlength="8000" placeholder="Load a model to start…" disabled></textarea>
