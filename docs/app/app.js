@@ -13,6 +13,7 @@ import * as pdfjs from "./vendor/pdf.min.mjs";
 import { parseChanges, applyPdf, applyDocx, locate, closestPassage, detectPII, piiPrompt, parsePiiAnswer,
   redactPdf, redactDocx, renderPages, PII_LABELS, listFields, fillForm, fillPrompt, parseFillAnswer, FILL_SYSTEM } from "./layout.js";
 import * as office from "./office.js";
+import * as cmp from "./compare.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
 
@@ -233,7 +234,10 @@ class FakeEngine {
       const n = (last.match(/<source id=/g) || []).length;
       const src = /<source id="1"[^>]*>\n([^\n]+)/.exec(last);
       const opening = src ? src[1].trim().split(/\s+/).slice(0, 5).join(" ") : "";
-      const reply = layout && opening
+      const diffs = /<differences>\n([\s\S]*?)\n<\/differences>/.exec(last)?.[1];
+      const reply = diffs != null
+        ? `The new version changes ${(diffs.match(/^\d+\. /gm) || []).length} passages [1]. First change: ${(/before: (.*)/.exec(diffs) || /^1\. (.*)/m.exec(diffs) || ["", "none"])[1]}`
+        : layout && opening
         ? `I changed the opening words.\n\nFIND: ${opening}\nREPLACE: ${opening.toUpperCase()}`
         : `Dear Mr Weber,\n\nthank you for your quick reply [1].\n\nBest regards,\nAnna Schulz\n\n---\nChanged: more formal tone. (${n} source(s) read)`;
       const words = reply.split(/(?<= )/);
@@ -327,15 +331,15 @@ function chunkText(text) {
   return chunks.map((t, index) => ({ index, text: t, tokens: tokens(t) }));
 }
 
-// BM25 over all chunks: keyword search that needs no extra model.
-function search(query, k) {
-  const all = state.docs.flatMap((d) => d.chunks.map((c) => ({ doc: d, c })));
-  if (!all.length) return [];
+// ------------------------------------------------------------------ search
+
+// Keyword search (BM25): exact terms, names, numbers. Needs no model.
+function bm25(all, query) {
   const q = [...new Set(tokens(query))];
   const N = all.length;
   const avg = all.reduce((s, x) => s + x.c.tokens.length, 0) / N || 1;
   const df = new Map(q.map((t) => [t, all.filter((x) => x.c.tokens.includes(t)).length]));
-  const scored = all.map((x) => {
+  return all.map((x) => {
     const tf = new Map();
     for (const t of x.c.tokens) tf.set(t, (tf.get(t) || 0) + 1);
     let s = 0;
@@ -345,11 +349,127 @@ function search(query, k) {
       const idf = Math.log(1 + (N - df.get(t) + 0.5) / (df.get(t) + 0.5));
       s += idf * (f * 2.2) / (f + 1.2 * (0.25 + 0.75 * x.c.tokens.length / avg));
     }
-    return { ...x, score: s };
+    return s;
   });
-  const hits = scored.filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, k);
+}
+
+// Meaning search: a small multilingual model (embed-worker.js) turns passages into vectors on
+// this device, so "How long can I cancel?" finds "Die Kündigungsfrist beträgt drei Monate".
+// Used for long documents only; short ones are read whole anyway.
+const meaning = { worker: null, status: "off", progress: 0, pending: new Map(), seq: 0, ready: null, error: "" };
+
+function meaningWanted() {
+  return $("#meaning").checked && state.docs.reduce((s, d) => s + d.text.length, 0) > FULL_DOC_CHARS;
+}
+
+function meaningWorker() {
+  if (meaning.worker) return meaning.worker;
+  const w = new Worker(new URL("./embed-worker.js", import.meta.url), { type: "module" });
+  w.onmessage = ({ data }) => {
+    if (data.type === "progress") { meaning.progress = data.total ? data.loaded / data.total : 0; renderMeaning(); }
+    else if (data.type === "ready") meaning.ready?.resolve();
+    else if (data.type === "vectors" || data.type === "error") {
+      const p = meaning.pending.get(data.id);
+      if (data.id == null || !p) { if (data.type === "error") meaning.ready?.reject(new Error(data.message)); return; }
+      meaning.pending.delete(data.id);
+      if (data.type === "error") p.reject(new Error(data.message));
+      else p.resolve(Array.from({ length: data.vectors.length / data.dim }, (_, i) => data.vectors.subarray(i * data.dim, (i + 1) * data.dim)));
+    }
+  };
+  w.onerror = (e) => { meaning.ready?.reject(new Error(e.message || "The search model could not start.")); };
+  return (meaning.worker = w);
+}
+
+function embed(texts, query = false) {
+  const id = ++meaning.seq;
+  return new Promise((resolve, reject) => {
+    meaning.pending.set(id, { resolve, reject });
+    meaning.worker.postMessage({ type: "embed", id, texts, query });
+  });
+}
+
+let indexing = false;
+async function updateMeaning() {
+  if (!meaningWanted() || indexing) { renderMeaning(); return; }
+  indexing = true;
+  try {
+    if (meaning.status === "off" || meaning.status === "failed") {
+      meaning.status = "loading";
+      meaning.progress = 0;
+      renderMeaning();
+      await new Promise((resolve, reject) => { meaning.ready = { resolve, reject }; meaningWorker().postMessage({ type: "load" }); });
+      meaning.status = "indexing";
+    }
+    for (;;) {
+      const todo = state.docs.flatMap((d) => d.chunks.filter((c) => !c.vec));
+      if (!todo.length) break;
+      meaning.status = "indexing";
+      renderMeaning();
+      const batch = todo.slice(0, 8);
+      const vecs = await embed(batch.map((c) => c.text));
+      batch.forEach((c, i) => { c.vec = vecs[i]; });
+    }
+    meaning.status = "ready";
+  } catch (err) {
+    console.error(err);
+    meaning.status = "failed";
+    meaning.error = String(err?.message || err);
+    meaning.worker?.terminate();
+    meaning.worker = null;
+  } finally {
+    indexing = false;
+    renderMeaning();
+  }
+}
+
+function renderMeaning() {
+  const note = $("#meaning-note");
+  const all = state.docs.flatMap((d) => d.chunks);
+  const done = all.filter((c) => c.vec).length;
+  const long = state.docs.reduce((s, d) => s + d.text.length, 0) > FULL_DOC_CHARS;
+  note.classList.toggle("ok", meaning.status === "ready" && long);
+  if (!$("#meaning").checked) note.textContent = "Off: long documents are searched by keywords only.";
+  else if (meaning.status === "loading") note.textContent = `Downloading the search model… ${Math.round(meaning.progress * 100)}%`;
+  else if (meaning.status === "indexing" && long) note.textContent = `Reading for meaning… ${Math.round((done / (all.length || 1)) * 100)}%`;
+  else if (meaning.status === "failed") note.textContent = "Meaning search couldn't start here, so keyword search is used.";
+  else if (meaning.status === "ready" && long) note.textContent = `✓ Long documents are searched by meaning and keywords.`;
+  else note.textContent = "Finds passages by what they mean, not only by matching words. Used for long documents; downloads a 120 MB model once.";
+}
+
+const RRF_K = 60, POOL = 30;
+
+// Hybrid search: keyword and meaning rankings, fused by rank (reciprocal rank fusion).
+async function search(query, k) {
+  const all = state.docs.flatMap((d) => d.chunks.map((c) => ({ doc: d, c })));
+  if (!all.length) return [];
+  const lists = [["keywords", bm25(all, query), true]];
+  if (meaning.worker && meaning.status !== "failed" && meaning.status !== "loading" && all.some((x) => x.c.vec)) {
+    try {
+      const [q] = await embed([query], true);
+      lists.push(["meaning", all.map((x) => (x.c.vec ? dot(x.c.vec, q) : -Infinity)), false]);
+    } catch (err) { console.error(err); }
+  }
+  const fused = new Map();
+  for (const [label, scores, positiveOnly] of lists) {
+    const order = scores.map((s, i) => [s, i]).filter(([s]) => s > (positiveOnly ? 0 : -Infinity))
+      .sort((a, b) => b[0] - a[0]).slice(0, POOL);
+    order.forEach(([, i], r) => {
+      const f = fused.get(i) || { score: 0, by: new Set() };
+      f.score += 1 / (RRF_K + r + 1);
+      f.by.add(label);
+      fused.set(i, f);
+    });
+  }
+  const hits = [...fused.entries()].sort((a, b) => b[1].score - a[1].score).slice(0, k)
+    .map(([i, f]) => ({ ...all[i], score: f.score, match: f.by.size === 2 ? "both" : [...f.by][0] }));
   // Nothing matched (e.g. "summarise this"): fall back to the start of each document.
   return hits.length ? hits : state.docs.map((d) => ({ doc: d, c: d.chunks[0], score: 0 })).slice(0, k);
+}
+
+function dot(a, b) {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+  return s;
 }
 
 function renderDocs(pending = []) {
@@ -361,9 +481,7 @@ function renderDocs(pending = []) {
     const meta = Object.assign(document.createElement("span"), { className: "meta", textContent: `${Math.max(1, Math.round(d.text.length / 1000))}k chars` });
     const del = Object.assign(document.createElement("button"), { textContent: "✕", title: "Remove" });
     del.setAttribute("aria-label", `Remove ${d.name}`);
-    del.addEventListener("click", () => { state.docs = state.docs.filter((x) => x !== d); renderDocs(); });
-    li.append(name, meta, del);
-    if (!d.original) return li;
+    del.addEventListener("click", () => { state.docs = state.docs.filter((x) => x !== d); renderDocs(); renderMeaning(); });
     if (d.scanned) meta.textContent = "scan · text recognised";
     const tools = document.createElement("div");
     tools.className = "doc-tools";
@@ -372,12 +490,20 @@ function renderDocs(pending = []) {
       fill.addEventListener("click", () => openForm(d));
       tools.append(fill);
     }
-    const redact = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Remove personal data" });
-    redact.addEventListener("click", () => openRedaction(d));
-    tools.append(redact);
+    if (d.original) {
+      const redact = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Remove personal data" });
+      redact.addEventListener("click", () => openRedaction(d));
+      tools.append(redact);
+    }
+    if (state.docs.length > 1) {
+      const c = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Compare" });
+      c.addEventListener("click", () => openCompare(d));
+      tools.append(c);
+    }
+    if (!tools.childElementCount) { li.append(name, meta, del); return li; }
     const row = document.createElement("div");
     row.className = "doc-row";
-    row.append(...li.childNodes);
+    row.append(name, meta, del);
     li.className = "doc-item";
     li.append(row, tools);
     return li;
@@ -487,6 +613,7 @@ async function addFiles(files) {
     show();
   }
   if (window.matchMedia("(max-width: 860px)").matches && state.docs.length) $("#side").classList.remove("open");
+  updateMeaning();
 }
 
 const drop = $("#drop");
@@ -495,10 +622,13 @@ drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.ad
 drop.addEventListener("dragleave", () => drop.classList.remove("over"));
 drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); addFiles([...e.dataTransfer.files]); });
 
+$("#meaning").addEventListener("change", () => updateMeaning());
+
 $("#wipe").addEventListener("click", () => {
   state.docs = [];
   state.history = [];
   renderDocs();
+  renderMeaning();
   $("#messages").replaceChildren(emptyState());
   toast("Documents and chat wiped from this page.");
 });
@@ -560,7 +690,11 @@ function layoutOn() {
   return !$("#layout-row").hidden && $("#keep-layout").checked;
 }
 
-function buildTurn(question) {
+async function buildTurn(question, pair) {
+  if (pair) {
+    const [a, b] = pair.map((id) => state.docs.find((d) => d.id === id));
+    return { content: cmp.compareMessage(a.name, b.name, cmp.diff(a.text, b.text), question), sources: [], compare: [a, b] };
+  }
   if (!state.docs.length) return { content: question, sources: [] };
   const total = state.docs.reduce((s, d) => s + d.text.length, 0);
   if (total <= FULL_DOC_CHARS) {
@@ -573,12 +707,12 @@ function buildTurn(question) {
     };
   }
   const prev = [...state.history].reverse().find((m) => m.role === "user")?.content || "";
-  const hits = search(question.length < 60 && prev ? `${prev} ${question}` : question, TOP_K);
+  const hits = await search(question.length < 60 && prev ? `${prev} ${question}` : question, TOP_K);
   const blocks = hits.map((h, i) =>
     `<source id="${i + 1}" document="${neutralise(h.doc.name).replace(/"/g, "'")}">\n${neutralise(h.c.text)}\n</source>`);
   return {
     content: `Here are excerpts from my documents:\n<sources>\n${blocks.join("\n")}\n</sources>\n\nMy request: ${question}`,
-    sources: hits.map((h, i) => ({ id: i + 1, document: h.doc.name, part: h.c.index + 1, excerpt: h.c.text.slice(0, 400) })),
+    sources: hits.map((h, i) => ({ id: i + 1, document: h.doc.name, part: h.c.index + 1, match: h.match, excerpt: h.c.text })),
   };
 }
 
@@ -624,11 +758,14 @@ function attachSources(msgEl, sources) {
     chip.type = "button";
     chip.className = "source-chip";
     chip.textContent = s.part == null ? `[${s.id}] ${s.document} · full document` : `[${s.id}] ${s.document} · part ${s.part}`;
+    if (s.match) chip.title = MATCH_LABEL[s.match] || "";
     chip.addEventListener("click", () => showSource(msgEl, s.id));
     row.append(chip);
   }
   msgEl.append(row);
 }
+
+const MATCH_LABEL = { meaning: "Found by meaning", keywords: "Found by keywords", both: "Found by meaning and keywords" };
 
 function showSource(msgEl, id) {
   const s = (msgEl._sources || []).find((x) => String(x.id) === String(id));
@@ -638,8 +775,8 @@ function showSource(msgEl, id) {
   if (!box) { box = document.createElement("div"); box.className = "source-detail"; msgEl.append(box); }
   box.dataset.id = String(id);
   const title = document.createElement("b");
-  title.textContent = s.part == null ? `[${s.id}] ${s.document}, full document (beginning shown)\n` : `[${s.id}] ${s.document}, part ${s.part}\n`;
-  box.replaceChildren(title, document.createTextNode(s.excerpt + (s.excerpt.length >= 400 ? "…" : "")));
+  title.textContent = s.part == null ? `[${s.id}] ${s.document}, full document (beginning shown)\n` : `[${s.id}] ${s.document}, part ${s.part}${s.match ? " · " + MATCH_LABEL[s.match] : ""}\n`;
+  box.replaceChildren(title, document.createTextNode(s.excerpt + (s.part == null && s.excerpt.length >= 400 ? "…" : "")));
 }
 
 $("#messages").addEventListener("click", (e) => {
@@ -1215,10 +1352,15 @@ function stop() {
 sendBtn.addEventListener("click", (e) => { if (state.busy) { e.preventDefault(); stop(); } });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") stop(); });
 
-$("#chat-form").addEventListener("submit", async (e) => {
+$("#chat-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const question = input.value.trim();
   if (!question || state.busy || !state.engine) return;
+  send(question, cmp.detectCompare(question, state.docs));
+});
+
+async function send(question, pair = null) {
+  if (state.busy || !state.engine) return;
   input.value = "";
   input.style.height = "auto";
   stopRequested = false;
@@ -1234,9 +1376,9 @@ $("#chat-form").addEventListener("submit", async (e) => {
   box.append(reply);
   box.scrollTop = box.scrollHeight;
 
-  const turn = buildTurn(question);
+  const turn = await buildTurn(question, pair);
   const messages = [
-    { role: "system", content: layoutOn() ? `${RULES}\n\n${LAYOUT_RULES}` : RULES },
+    { role: "system", content: turn.compare ? `${RULES}\n\n${cmp.COMPARE_RULES}` : layoutOn() ? `${RULES}\n\n${LAYOUT_RULES}` : RULES },
     ...state.history.slice(-2 * HISTORY_TURNS),
     { role: "user", content: turn.content },
   ];
@@ -1273,18 +1415,78 @@ $("#chat-form").addEventListener("submit", async (e) => {
     if (!failed && answer) {
       attachSources(reply, turn.sources);
       attachActions(reply, answer, turn.sources[0]?.document);
-      renderChanges(reply, answer);
+      if (turn.compare) attachCompare(reply, turn.compare);
+      else renderChanges(reply, answer);
       state.history.push({ role: "user", content: question }, { role: "assistant", content: answer + (stopRequested ? "\n\n[stopped]" : "") });
     }
     setStreaming(false);
     input.focus();
   }
-});
+}
+
+// ------------------------------------------------------------------ compare two documents
+
+function attachCompare(msgEl, [a, b]) {
+  const btn = Object.assign(document.createElement("button"), { type: "button", className: "source-chip wide", textContent: `Compared ${a.name} → ${b.name} · show differences` });
+  btn.addEventListener("click", () => openCompare(a, b.id));
+  const row = Object.assign(document.createElement("div"), { className: "sources" });
+  row.append(btn);
+  msgEl.append(row);
+}
+
+// Exact comparison runs instantly on this device, even before an AI model is loaded.
+function openCompare(d, otherId) {
+  const docs = state.docs;
+  const others = docs.filter((x) => x.id !== d.id);
+  const other = (otherId && docs.find((x) => x.id === otherId)) || others[others.length - 1];
+  if (!other) return;
+  const pickOld = el("select", { id: "cmp-old" }), pickNew = el("select", { id: "cmp-new" });
+  for (const x of docs) {
+    pickOld.append(el("option", { value: x.id, textContent: x.name }));
+    pickNew.append(el("option", { value: x.id, textContent: x.name }));
+  }
+  const dFirst = docs.indexOf(d) < docs.indexOf(other);
+  pickOld.value = dFirst ? d.id : other.id;
+  pickNew.value = dFirst ? other.id : d.id;
+  const swap = el("button", { type: "button", className: "ghost", textContent: "⇄ Swap" });
+  const summary = el("p", { className: "cmp-stats" });
+  const view = el("div", { className: "cmp-view" });
+  const explain = el("button", { type: "button", className: "primary", textContent: "Explain the changes" });
+  const hint = el("small", { className: "muted" });
+
+  const run = () => {
+    const a = docs.find((x) => x.id === pickOld.value), b = docs.find((x) => x.id === pickNew.value);
+    if (a === b) { summary.textContent = "Pick two different documents."; view.replaceChildren(); explain.disabled = true; return; }
+    const r = cmp.diff(a.text, b.text), st = r.stats;
+    summary.textContent = st.identical ? "The text of both documents is identical."
+      : `${st.changes} changed passage${st.changes === 1 ? "" : "s"} · ${st.added_words} words added · ${st.removed_words} words removed`;
+    view.replaceChildren(...cmp.render(r));
+    explain.disabled = !state.engine || state.busy;
+    hint.textContent = state.engine ? "" : "Load an AI model to get the changes explained.";
+  };
+  pickOld.addEventListener("change", run);
+  pickNew.addEventListener("change", run);
+  swap.addEventListener("click", () => { [pickOld.value, pickNew.value] = [pickNew.value, pickOld.value]; run(); });
+  explain.addEventListener("click", () => {
+    const a = docs.find((x) => x.id === pickOld.value), b = docs.find((x) => x.id === pickNew.value);
+    closeModal();
+    send(`What changed from ${a.name} to ${b.name}, and what does it mean for me?`, [a.id, b.id]);
+  });
+  openModal("Compare documents", el("div", { className: "cmp" },
+    el("div", { className: "cmp-pick" },
+      el("label", {}, el("span", { className: "small muted", textContent: "Older version" }), pickOld), swap,
+      el("label", {}, el("span", { className: "small muted", textContent: "Newer version" }), pickNew)),
+    summary,
+    el("p", { className: "small muted cmp-legend" }, el("del", { textContent: "removed" }), " ", el("ins", { textContent: "added" }), " · compared word by word on this device"),
+    view), [hint, explain]);
+  run();
+}
 
 // ------------------------------------------------------------------ boot
 
 initModelCard();
 renderDocs();
+renderMeaning();
 // Warn before closing with work on the page, since nothing can be recovered afterwards.
 window.addEventListener("beforeunload", (e) => {
   if (state.docs.length || state.history.length) { e.preventDefault(); e.returnValue = ""; }

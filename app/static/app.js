@@ -232,7 +232,6 @@ function renderDocs(pending = []) {
       await api(`/api/workspaces/${state.current.id}/documents/${d.id}`, { method: "DELETE" });
       await loadWorkspaces(state.current.id);
     });
-    if (!d.kind) { li.append(name, meta, del); return li; }
     const row = document.createElement("div");
     row.className = "doc-row";
     row.append(name, meta, del);
@@ -244,11 +243,19 @@ function renderDocs(pending = []) {
       fill.addEventListener("click", () => openForm(d));
       tools.append(fill);
     }
-    const redact = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Remove personal data" });
-    redact.addEventListener("click", () => openRedaction(d));
-    tools.append(redact);
+    if (d.kind) {
+      const redact = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Remove personal data" });
+      redact.addEventListener("click", () => openRedaction(d));
+      tools.append(redact);
+    }
+    if (docs.length > 1) {
+      const cmp = Object.assign(document.createElement("button"), { type: "button", className: "link-btn", textContent: "Compare" });
+      cmp.addEventListener("click", () => openCompare(d));
+      tools.append(cmp);
+    }
     li.className = "doc-item";
-    li.append(row, tools);
+    li.append(row);
+    if (tools.childElementCount) li.append(tools);
     return li;
   });
   for (const p of pending) {
@@ -716,6 +723,80 @@ async function openRedaction(d) {
   });
 }
 
+// ------------------------------------------------------------------ compare two documents
+
+const COMPARE_WORDS = /(\bcompar|\bvergleich|\bunterschied|\bdifferences?\b|what('?s| has| have)? changed|was (hat|ist) sich\b.*\bge(ä|ae)ndert|welche (ä|ae)nderungen|(ä|ae)nderungen zwischen|changes between|\bdiff\b)/i;
+
+function docStem(name) {
+  return name.replace(/\.[^.]+$/, "").toLowerCase();
+}
+
+// "What changed between v1 and v2?" with two or more documents: compare instead of searching.
+function detectCompare(text, docs) {
+  if (docs.length < 2 || !COMPARE_WORDS.test(text)) return null;
+  const t = text.toLowerCase();
+  const named = docs.filter((d) => t.includes(docStem(d.name)) || t.includes(d.name.toLowerCase()));
+  const pick = named.length >= 2 ? named.slice(0, 2) : docs.slice(-2);
+  return pick.map((d) => d.id); // upload order: the earlier file is treated as the older version
+}
+
+async function openCompare(d, otherId) {
+  const docs = state.current.documents;
+  const others = docs.filter((x) => x.id !== d.id);
+  const pickOld = el("select", { id: "cmp-old" });
+  const pickNew = el("select", { id: "cmp-new" });
+  for (const x of docs) {
+    pickOld.append(el("option", { value: x.id, textContent: x.name }));
+    pickNew.append(el("option", { value: x.id, textContent: x.name }));
+  }
+  const other = otherId ? docs.find((x) => x.id === otherId) : others[others.length - 1];
+  const dIsOlder = docs.indexOf(d) < docs.indexOf(other);
+  pickOld.value = dIsOlder ? d.id : other.id;
+  pickNew.value = dIsOlder ? other.id : d.id;
+  const swap = el("button", { type: "button", className: "ghost small", textContent: "⇄ Swap" });
+  const summary = el("p", { className: "cmp-stats muted" });
+  const view = el("div", { className: "cmp-view" });
+  const explain = el("button", { type: "button", className: "primary", textContent: "Explain the changes" });
+
+  async function run() {
+    if (pickOld.value === pickNew.value) {
+      summary.textContent = "Pick two different documents.";
+      view.replaceChildren();
+      explain.disabled = true;
+      return;
+    }
+    summary.textContent = "Comparing…";
+    explain.disabled = true;
+    try {
+      const r = await api(`/api/workspaces/${state.current.id}/compare`, { method: "POST", body: { old_id: pickOld.value, new_id: pickNew.value } });
+      const st = r.stats;
+      summary.textContent = st.identical
+        ? "The text of both documents is identical."
+        : `${st.changes} changed passage${st.changes === 1 ? "" : "s"} · ${st.added_words} words added · ${st.removed_words} words removed`;
+      view.innerHTML = r.html; // built server-side from escaped text
+      explain.disabled = false;
+    } catch (err) {
+      summary.textContent = err.message;
+    }
+  }
+  pickOld.addEventListener("change", run);
+  pickNew.addEventListener("change", run);
+  swap.addEventListener("click", () => { [pickOld.value, pickNew.value] = [pickNew.value, pickOld.value]; run(); });
+  explain.addEventListener("click", () => {
+    const a = docs.find((x) => x.id === pickOld.value), b = docs.find((x) => x.id === pickNew.value);
+    closeModal();
+    send(`What changed from ${a.name} to ${b.name}, and what does it mean for me?`, [a.id, b.id]);
+  });
+  const legend = el("p", { className: "small muted cmp-legend" },
+    el("del", { textContent: "removed" }), " ", el("ins", { textContent: "added" }), " · compared word by word on this server");
+  openModal("Compare documents", el("div", { className: "cmp" },
+    el("div", { className: "cmp-pick" },
+      el("label", {}, el("span", { className: "small muted", textContent: "Older version" }), pickOld), swap,
+      el("label", {}, el("span", { className: "small muted", textContent: "Newer version" }), pickNew)),
+    summary, legend, view), [explain]);
+  await run();
+}
+
 function attachSources(msgEl, sources) {
   msgEl._sources = sources;
   msgEl.querySelector(".sources")?.remove();
@@ -727,11 +808,14 @@ function attachSources(msgEl, sources) {
     const chip = document.createElement("button");
     chip.className = "source-chip";
     chip.textContent = s.chunk == null ? `[${s.id}] ${s.document} · full document` : `[${s.id}] ${s.document} · part ${s.chunk}`;
+    if (s.match) chip.title = MATCH_LABEL[s.match] || "";
     chip.addEventListener("click", () => showSource(msgEl, s.id));
     row.append(chip);
   }
   msgEl.append(row);
 }
+
+const MATCH_LABEL = { meaning: "Found by meaning", keywords: "Found by keywords", both: "Found by meaning and keywords" };
 
 function showSource(msgEl, id) {
   const s = (msgEl._sources || []).find((x) => String(x.id) === String(id));
@@ -743,8 +827,8 @@ function showSource(msgEl, id) {
   const title = document.createElement("b");
   title.textContent = s.chunk == null
     ? `[${s.id}] ${s.document}, full document (beginning shown)\n`
-    : `[${s.id}] ${s.document}, part ${s.chunk} (relevance ${s.score})\n`;
-  box.replaceChildren(title, document.createTextNode(s.excerpt + (s.excerpt.length >= 400 ? "…" : "")));
+    : `[${s.id}] ${s.document}, part ${s.chunk} · ${MATCH_LABEL[s.match] || "relevance " + s.score}\n`;
+  box.replaceChildren(title, document.createTextNode(s.excerpt + (s.chunk == null && s.excerpt.length >= 400 ? "…" : "")));
 }
 
 $("#messages").addEventListener("click", (e) => {
@@ -778,10 +862,15 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && state.busy && controller) controller.abort();
 });
 
-$("#chat-form").addEventListener("submit", async (e) => {
+$("#chat-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text || state.busy || !state.current) return;
+  send(text, detectCompare(text, state.current.documents || []));
+});
+
+async function send(text, comparePair = null) {
+  if (state.busy || !state.current) return;
   const ws = state.current;
   controller = new AbortController();
   setStreaming(true);
@@ -803,7 +892,10 @@ $("#chat-form").addEventListener("submit", async (e) => {
   let checked = null;
   try {
     const res = await api(`/api/workspaces/${ws.id}/chat`, {
-      method: "POST", body: { message: text, keep_layout: !$("#layout-row").hidden && $("#keep-layout").checked }, raw: true, signal: controller.signal,
+      method: "POST", raw: true, signal: controller.signal, body: {
+        message: text, keep_layout: !comparePair && !$("#layout-row").hidden && $("#keep-layout").checked,
+        ...(comparePair ? { compare: comparePair } : {}),
+      },
     });
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -845,14 +937,24 @@ $("#chat-form").addEventListener("submit", async (e) => {
     if (answer) {
       attachSources(reply, sources);
       attachActions(reply, answer, sources[0]?.document);
-      renderChanges(reply, answer, checked);
+      if (comparePair) attachCompare(reply, comparePair);
+      else renderChanges(reply, answer, checked);
       ws.history.push({ role: "user", content: text }, { role: "assistant", content: answer + (stopped ? "\n\n[stopped]" : "") });
     }
     controller = null;
     setStreaming(false);
     input.focus();
   }
-});
+}
+
+function attachCompare(msgEl, [oldId, newId]) {
+  const docs = state.current.documents;
+  const a = docs.find((x) => x.id === oldId), b = docs.find((x) => x.id === newId);
+  if (!a || !b) return;
+  const btn = el("button", { type: "button", className: "source-chip wide", textContent: `Compared ${a.name} → ${b.name} · show differences` });
+  btn.addEventListener("click", () => openCompare(a, b.id));
+  msgEl.append(el("div", { className: "sources" }, btn));
+}
 
 // ------------------------------------------------------------------ boot
 

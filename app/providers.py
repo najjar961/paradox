@@ -35,7 +35,19 @@ class Embedder:
         self.s = settings
         self.client = client
 
-    async def embed(self, texts: list[str]) -> np.ndarray:
+    def _prefix(self, query: bool) -> str:
+        """Retrieval models trained with task prefixes search much better when given them."""
+        m = self.s.embed_model.lower()
+        if "nomic-embed" in m:
+            return "search_query: " if query else "search_document: "
+        if "e5" in m and "mxbai" not in m:
+            return "query: " if query else "passage: "
+        return ""
+
+    async def embed(self, texts: list[str], query: bool = False) -> np.ndarray:
+        if self.s.embed_provider != "hash":
+            pre = self._prefix(query)
+            texts = [pre + t for t in texts] if pre else texts
         out = []
         for i in range(0, len(texts), self.batch_size):
             out.append(await self._embed_batch(texts[i:i + self.batch_size]))
@@ -182,6 +194,11 @@ class ChatModel:
         if "correct FIND" in system:
             pairs = re.findall(r"Closest text in the document: (.+)\nYour REPLACE: (.*)", last)
             yield "\n\n".join(f"FIND: {a}\nREPLACE: {a.upper()}" for a, _ in pairs)
+            return
+        if "<differences>" in last:
+            n = len(re.findall(r"^\d+\. ", last, re.M))
+            first = re.search(r"before: (.*)", last) or re.search(r"^1\. (.*)", last, re.M)
+            yield f"[echo] {n} change(s) to explain. " + (first.group(1) if first else "")
             return
         n_sources = last.count("<source id=")
         question = last.rsplit("My request: ", 1)[-1]

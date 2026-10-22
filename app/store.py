@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from . import search as hybrid
+
 
 @dataclass
 class Chunk:
@@ -45,6 +47,7 @@ class Workspace:
     originals: dict[str, bytes] = field(default_factory=dict, repr=False)  # original PDF/DOCX bytes, RAM only
     chunks: list[Chunk] = field(default_factory=list)
     vectors: np.ndarray | None = None  # shape (n_chunks, dim), L2-normalised
+    _bm25: hybrid.BM25 | None = field(default=None, repr=False)
     history: list[dict] = field(default_factory=list)  # {"role", "content"}
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -58,6 +61,7 @@ class Workspace:
             if original is not None:
                 self.originals[doc.id] = original
             self.chunks.extend(chunks)
+            self._bm25 = None
             self.vectors = vectors if self.vectors is None else np.vstack([self.vectors, vectors])
 
     def remove(self, doc_id: str) -> bool:
@@ -69,6 +73,7 @@ class Workspace:
             self.originals.pop(doc_id, None)
             keep = [i for i, c in enumerate(self.chunks) if c.doc_id != doc_id]
             self.chunks = [self.chunks[i] for i in keep]
+            self._bm25 = None
             self.vectors = self.vectors[keep] if keep and self.vectors is not None else None
             return True
 
@@ -79,15 +84,16 @@ class Workspace:
         with self.lock:
             return [(self.documents[i].name, t) for i, t in self.texts.items() if i in self.documents]
 
-    def search(self, query_vec: np.ndarray, k: int) -> list[tuple[Chunk, float]]:
+    def search(self, query_vec: np.ndarray | None, k: int, query: str = "") -> list[tuple[Chunk, float, str]]:
+        """Hybrid search: meaning (cosine of embeddings) fused with keywords (BM25)."""
         with self.lock:
-            if self.vectors is None or not self.chunks:
+            if not self.chunks:
                 return []
-            scores = self.vectors @ query_vec
-            k = min(k, len(self.chunks))
-            top = np.argpartition(-scores, k - 1)[:k]
-            top = top[np.argsort(-scores[top])]
-            return [(self.chunks[i], float(scores[i])) for i in top]
+            if self._bm25 is None:
+                self._bm25 = hybrid.BM25([hybrid.tokens(c.text) for c in self.chunks])
+            vec = self.vectors @ query_vec if self.vectors is not None and query_vec is not None else None
+            kw = self._bm25.scores(hybrid.tokens(query)) if query else np.zeros(len(self.chunks), np.float32)
+            return [(self.chunks[i], score, how) for i, score, how in hybrid.fuse(vec, kw, k)]
 
     def summary(self) -> dict:
         return {

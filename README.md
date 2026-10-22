@@ -30,9 +30,16 @@ Paradox is a self-hosted, multi-user AI assistant for confidential documents. Up
 - **Remove personal data:** finds names, addresses, emails, phone numbers, IBANs, card numbers, dates of birth and ID numbers, lets you tick what goes, then truly redacts it (the text is removed from the file, not covered) and wipes the author and other hidden properties
 - **Preview before download:** every edit or redaction opens a Before/After preview of the real pages with the changes highlighted
 - **Keep original layout:** for PDF and Word files, Paradox proposes precise changes, you tick the ones you want, and it applies them to your original file. Logos, tables, fonts, colours and page layout stay as they were
-- Short documents are read in full; large ones are searched by passage. Answers stream live with clickable `[1]` citations
+- **Meaning-based search:** short documents are read in full; long ones are searched by meaning and by keywords at the same time, so "How long can I cancel?" finds "Die Kündigungsfrist beträgt drei Monate". Every citation says whether it was found by meaning, by keywords or both. Answers stream live with clickable `[1]` citations
+- **Compare two documents:** drop in two versions and ask "what changed?", or click **Compare**. Paradox computes every difference exactly, word by word, shows them in place (removed struck through, added highlighted), and the AI explains what the changes mean. It only explains differences that are really there
 - Model choice: **Ollama** (fully local), **OpenAI** or any OpenAI-compatible server, or **Anthropic**
 - Light and dark mode, works on mobile
+
+## How search and comparing work
+
+**Search.** Each long document is split into passages. Paradox ranks them twice: by keywords (BM25, good for names, numbers and exact terms) and by meaning (embedding vectors, good for questions phrased differently from the text, or in another language). The two rankings are merged with reciprocal rank fusion, so a passage both methods agree on comes first. The self-hosted app uses your embedding model (`EMBED_MODEL`; for German documents `bge-m3` works much better than the English-focused `nomic-embed-text`). Vectors live in session memory like everything else.
+
+**Comparing.** The comparison is done by code, not by the AI: paragraphs are aligned first, then the words inside changed paragraphs (`app/compare.py`, `docs/app/compare.js`). The AI gets only the numbered list of real differences and is told to explain them, most important first (amounts, dates, deadlines, obligations), quoting old and new values. It never sees an invented change, and you can check every claim in the comparison view.
 
 ## Editing PDF and Word files without losing the layout
 
@@ -59,7 +66,7 @@ Paradox Lite is a static page in [`docs/app/`](docs/app/) that does everything o
 
 - Files are read in the page with pdf.js and mammoth. They exist only in JavaScript memory, never in browser storage.
 - The AI model runs on the visitor's graphics card through [WebLLM](https://github.com/mlc-ai/web-llm) and WebGPU. Users pick Qwen2.5 1.5B, Llama 3.2 3B or Qwen2.5 7B; the public weights download once from Hugging Face and are cached by the browser.
-- Short documents are read whole; long ones are searched by passage (BM25). Answers stream with a Stop button, and can be downloaded as PDF, Word or text, built in the browser.
+- Short documents are read whole; long ones are searched by meaning and keywords. Meaning search uses [multilingual-e5-small](https://huggingface.co/Xenova/multilingual-e5-small) (about 120 MB, 100 languages) through [Transformers.js](https://github.com/huggingface/transformers.js) in a background thread on the visitor's device; it can be switched off, and keyword search (BM25) is used until it's ready. Answers stream with a Stop button, and can be downloaded as PDF, Word or text, built in the browser.
 - A Content-Security-Policy in the page only allows requests to this site and the model hosts, so documents cannot be sent anywhere else.
 - All libraries are served from this repository ([`docs/app/vendor`](docs/app/vendor/LICENSES.md)), so visitors' browsers never contact a third-party CDN.
 
@@ -135,7 +142,7 @@ pip install pytest
 python -m pytest -q
 ```
 
-They cover login and rate limiting, cookie flags, CSRF, the full upload/retrieve/chat flow, DOCX and PDF parsing, upload limits, isolation between users, wipe on logout and idle expiry, the no-disk-writes check, prompt delimiter forging, and chunking.
+They cover login and rate limiting, cookie flags, CSRF, the full upload/retrieve/chat flow, hybrid search, document comparison, DOCX and PDF parsing, upload limits, isolation between users, wipe on logout and idle expiry, the no-disk-writes check, prompt delimiter forging, and chunking.
 
 ## Layout
 
@@ -146,6 +153,8 @@ app/
   ingest.py      text extraction from bytes and chunking
   providers.py   Ollama / OpenAI / Anthropic chat and embeddings
   rag.py         prompt assembly and citations
+  search.py      hybrid search (BM25 + embeddings, rank fusion)
+  compare.py     exact paragraph and word comparison of two documents
   auth.py        users file and login rate limiter
   static/        single-page UI (vanilla JS, no build step)
 scripts/hash_password.py

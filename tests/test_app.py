@@ -599,3 +599,93 @@ def test_powerpoint_edit_keeps_bold_and_redacts(app):
     r = c.post(f"/api/workspaces/{ws['id']}/documents/{d['id']}/redact", json={"terms": ["Lena Becker"]}).json()
     runs = Presentation(io.BytesIO(base64.b64decode(r["file"]))).slides[0].placeholders[1].text_frame.paragraphs[1].runs
     assert runs[1].text.startswith("█") and runs[1].font.bold
+
+
+# ---------------------------------------------------------------- round 3: search and compare
+
+def test_hybrid_search_fuses_keywords_and_meaning():
+    import numpy as np
+    from app.store import Document, Workspace
+    ws = Workspace(id="w", name="w")
+    texts = ["Die Kündigungsfrist beträgt drei Monate zum Monatsende.",
+             "Die Miete ist am ersten Werktag fällig.",
+             "Haustiere sind nach Absprache erlaubt."]
+    # Hand-made "meaning" vectors: the question is closest to text 0 even with no shared words.
+    vecs = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float32)
+    ws.add(Document("d", "vertrag.txt", 100, 3), [Chunk("d", "vertrag.txt", i, t) for i, t in enumerate(texts)], vecs)
+    hits = ws.search(np.array([0.9, 0.1, 0.0], dtype=np.float32), 2, "How long is the notice period?")
+    assert hits[0][0].index == 0 and hits[0][2] == "meaning"
+    # A keyword the meaning vector misses still gets in, and agreeing lists rank first.
+    hits = ws.search(np.array([0.0, 0.2, 0.9], dtype=np.float32), 3, "Miete fällig")
+    assert {h[0].index for h in hits[:2]} == {1, 2}
+    both = [h for h in hits if h[2] == "both"]
+    assert both and both[0][0].index == 1
+    ws.remove("d")
+    assert ws.search(None, 3, "Miete") == []
+
+
+def test_embedding_prefixes():
+    from app.providers import Embedder
+    e = Embedder(replace(Settings(), embed_model="nomic-embed-text"), None)
+    assert e._prefix(True) == "search_query: " and e._prefix(False) == "search_document: "
+    e = Embedder(replace(Settings(), embed_model="jeffh/intfloat-multilingual-e5-large"), None)
+    assert e._prefix(True) == "query: "
+    assert Embedder(replace(Settings(), embed_model="bge-m3"), None)._prefix(True) == ""
+
+
+OLD = """Mietvertrag
+
+Die Miete beträgt 1.200 EUR pro Monat und ist am 1. jedes Monats fällig.
+
+Die Kündigungsfrist beträgt drei Monate.
+
+Haustiere sind nicht erlaubt.
+
+Der Vertrag beginnt am 1. Januar 2026."""
+NEW = """Mietvertrag
+
+Die Miete beträgt 1.350 EUR pro Monat und ist am 3. jedes Monats fällig.
+
+Die Kündigungsfrist beträgt sechs Monate.
+
+Der Vertrag beginnt am 1. Januar 2026.
+
+Eine Kaution von zwei Monatsmieten ist zu leisten."""
+
+
+def test_compare_finds_every_change():
+    from app import compare
+    r = compare.diff(OLD, NEW)
+    st = r["stats"]
+    assert st["changes"] == 4 and not st["identical"]
+    listed = compare.change_list(r)
+    for s in ("1.200", "1.350", "drei", "sechs", "REMOVED paragraph: Haustiere", "ADDED paragraph: Eine Kaution"):
+        assert s in listed
+    html = compare.to_html(r)
+    assert "<del>1.200</del><ins>1.350</ins>" in html and "<script" not in html
+    assert compare.diff(OLD, OLD.replace("\n\n", "\n\n\n"))["stats"]["identical"]
+    # Unchanged text far from a change is collapsed.
+    long_old = "\n\n".join(f"Absatz {i} bleibt gleich." for i in range(30)) + "\n\nEnde alt."
+    long_new = long_old.replace("Ende alt.", "Ende neu.")
+    assert "29 unchanged paragraphs" in compare.to_html(compare.diff(long_old, long_new))
+    # Markup in documents is escaped.
+    assert "&lt;b&gt;" in compare.to_html(compare.diff("a", "<b>x</b>"))
+
+
+def test_compare_endpoint_and_chat(app):
+    c = login(app, "alice")
+    ws = c.post("/api/workspaces", json={"name": "v"}).json()["id"]
+    a = upload(c, ws, "vertrag_v1.txt", OLD.encode()).json()["id"]
+    b = upload(c, ws, "vertrag_v2.txt", NEW.encode()).json()["id"]
+    r = c.post(f"/api/workspaces/{ws}/compare", json={"old_id": a, "new_id": b})
+    assert r.status_code == 200 and r.json()["stats"]["changes"] == 4
+    assert c.post(f"/api/workspaces/{ws}/compare", json={"old_id": a, "new_id": a}).status_code == 400
+    assert c.post(f"/api/workspaces/{ws}/compare", json={"old_id": a, "new_id": "nope"}).status_code == 404
+    r = c.post(f"/api/workspaces/{ws}/chat", json={"message": "What changed?", "compare": [a, b], "keep_layout": True})
+    events = [json.loads(l) for l in r.text.splitlines() if l.strip()]
+    text = "".join(e.get("text", "") for e in events if e["type"] == "token")
+    assert "4 change(s)" in text and "1.200" in text
+    assert not any(e["type"] == "changes" for e in events)
+    # Another user can't compare alice's documents.
+    bob = login(app, "bob")
+    assert bob.post(f"/api/workspaces/{ws}/compare", json={"old_id": a, "new_id": b}).status_code == 404

@@ -17,5 +17,7 @@ These are unmodified copies, served from this site so that visitors' browsers ne
 | tesseract/core/* | [tesseract.js-core](https://github.com/naptha/tesseract.js-core) (Tesseract OCR compiled to WebAssembly) | 7.0.0 | Apache-2.0 |
 | tesseract/lang/deu, eng | [tessdata_best (integerised)](https://github.com/tesseract-ocr/tessdata_best) via @tesseract.js-data | 4.0.0 | Apache-2.0 |
 | jszip.min.js | [JSZip](https://github.com/Stuk/jszip) | 3.10.2 | MIT |
+| transformers/transformers.min.js | [Transformers.js](https://github.com/huggingface/transformers.js) (@huggingface/transformers, includes ONNX Runtime Web) | 4.3.0 | Apache-2.0 |
+| transformers/ort-wasm-simd-threaded.asyncify.* | [ONNX Runtime Web](https://github.com/microsoft/onnxruntime) | 1.31.0-dev.20260914 | MIT |
 
-The AI models themselves are downloaded by the visitor's browser from Hugging Face ([mlc-ai](https://huggingface.co/mlc-ai)) and carry their own licences: Qwen2.5 1.5B and 7B under Apache-2.0, Llama 3.2 3B under the Llama 3.2 Community License (Built with Llama).
+The AI models themselves are downloaded by the visitor's browser from Hugging Face ([mlc-ai](https://huggingface.co/mlc-ai)) and carry their own licences: Qwen2.5 1.5B and 7B under Apache-2.0, Llama 3.2 3B under the Llama 3.2 Community License (Built with Llama). The meaning-search model [multilingual-e5-small](https://huggingface.co/Xenova/multilingual-e5-small) (ONNX conversion of [intfloat/multilingual-e5-small](https://huggingface.co/intfloat/multilingual-e5-small)) is MIT-licensed.

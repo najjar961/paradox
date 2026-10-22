@@ -73,7 +73,7 @@ def build_system_prompt(workspace_prompt: str = "", model: str = "a configurable
     return "\n\n".join(parts)
 
 
-def build_user_message(question: str, hits: list[tuple[Chunk, float]], has_documents: bool = True,
+def build_user_message(question: str, hits: list[tuple], has_documents: bool = True,
                        full_docs: list[tuple[str, str]] | None = None) -> str:
     if full_docs:
         blocks = []
@@ -85,7 +85,7 @@ def build_user_message(question: str, hits: list[tuple[Chunk, float]], has_docum
         return f"Here is the full text of my {noun}:\n{sources}\n\nMy request: {question}"
     if hits:
         blocks = []
-        for i, (chunk, _score) in enumerate(hits, start=1):
+        for i, (chunk, *_rest) in enumerate(hits, start=1):
             name = _neutralise(chunk.doc_name).replace('"', "'")
             blocks.append(f'<source id="{i}" document="{name}">\n{_neutralise(chunk.text)}\n</source>')
         sources = "<sources>\n" + "\n".join(blocks) + "\n</sources>"
@@ -98,16 +98,17 @@ def build_user_message(question: str, hits: list[tuple[Chunk, float]], has_docum
     return f"{intro}\n{sources}\n\nMy request: {question}"
 
 
-def citations(hits: list[tuple[Chunk, float]]) -> list[dict]:
+def citations(hits: list[tuple]) -> list[dict]:
     return [
         {
             "id": i,
-            "document": c.doc_name,
-            "chunk": c.index + 1,
-            "score": round(score, 3),
-            "excerpt": c.text[:400],
+            "document": h[0].doc_name,
+            "chunk": h[0].index + 1,
+            "score": round(h[1], 3),
+            "match": h[2] if len(h) > 2 else "meaning",
+            "excerpt": h[0].text[:1500],
         }
-        for i, (c, score) in enumerate(hits, start=1)
+        for i, h in enumerate(hits, start=1)
     ]
 
 

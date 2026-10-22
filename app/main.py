@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from .auth import LoginLimiter, UserDirectory
 from .config import Settings, load_settings
 from .export import clean_text, to_docx, to_pdf
-from . import forms, layout_edit, ocr, privacy
+from . import compare, forms, layout_edit, ocr, privacy
 from .ingest import IMAGES, IngestError, chunk_text, extension, extract_text, SUPPORTED
 from .providers import ChatModel, Embedder, ProviderError
 from .rag import build_system_prompt, build_user_message, citations, document_citations
@@ -54,6 +54,12 @@ class WorkspacePatch(BaseModel):
 class ChatIn(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
     keep_layout: bool = False
+    compare: list[str] | None = Field(default=None, min_length=2, max_length=2)  # [older doc id, newer doc id]
+
+
+class CompareIn(BaseModel):
+    old_id: str
+    new_id: str
 
 
 class ChangeIn(BaseModel):
@@ -425,6 +431,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Document not found.")
         return {"ok": True}
 
+    # ------------------------------------------------------------ compare
+
+    def _pair(ws: Workspace, old_id: str, new_id: str):
+        if old_id == new_id:
+            raise HTTPException(400, "Pick two different documents.")
+        if old_id not in ws.documents or new_id not in ws.documents:
+            raise HTTPException(404, "Document not found.")
+        return ws.documents[old_id], ws.documents[new_id]
+
+    @app.post("/api/workspaces/{ws_id}/compare")
+    async def compare_docs(body: CompareIn, ws: Workspace = Depends(workspace)):
+        old, new = _pair(ws, body.old_id, body.new_id)
+        result = await asyncio.to_thread(compare.diff, ws.texts[old.id], ws.texts[new.id])
+        return {"old": old.name, "new": new.name, "stats": result["stats"],
+                "html": compare.to_html(result)}
+
     # ------------------------------------------------------------ chat
 
     @app.post("/api/workspaces/{ws_id}/chat")
@@ -432,7 +454,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         question = body.message.strip()
         hits: list = []
         full_docs: list[tuple[str, str]] = []
-        if ws.chunks and ws.total_chars() <= s.full_doc_chars:
+        compare_msg = None
+        if body.compare:
+            old, new = _pair(ws, *body.compare)
+            result = await asyncio.to_thread(compare.diff, ws.texts[old.id], ws.texts[new.id])
+            compare_msg = compare.compare_message(old.name, new.name, result, question)
+            sources = []
+        elif ws.chunks and ws.total_chars() <= s.full_doc_chars:
             # Small enough: give the model the whole text, so it can summarise or edit it.
             full_docs = ws.full_documents()
             sources = document_citations(full_docs)
@@ -441,19 +469,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             prev = next((m["content"] for m in reversed(ws.history) if m["role"] == "user"), "")
             query = f"{prev[:500]}\n{question}" if prev and len(question) < 60 else question
             try:
-                qv = (await request.app.state.embedder.embed([query]))[0]
+                qv = (await request.app.state.embedder.embed([query], query=True))[0]
             except ProviderError as exc:
                 raise HTTPException(502, str(exc)) from exc
-            hits = ws.search(qv, s.top_k)
+            hits = ws.search(qv, s.top_k, query)
             sources = citations(hits)
         else:
             sources = []
 
-        layout = body.keep_layout and any(d.editable for d in ws.documents.values())
+        layout = body.keep_layout and not compare_msg and any(d.editable for d in ws.documents.values())
         system = build_system_prompt(ws.system_prompt, f"{s.llm_model} (via {s.llm_provider})", layout)
+        if compare_msg:
+            system += "\n\n" + compare.COMPARE_RULES
         history = ws.history[-2 * s.history_turns:]
         # History keeps plain questions; only the current turn carries the document text.
-        user_msg = build_user_message(question, hits, bool(ws.chunks), full_docs)
+        user_msg = compare_msg or build_user_message(question, hits, bool(ws.chunks), full_docs)
         messages = [*history, {"role": "user", "content": user_msg}]
         model: ChatModel = request.app.state.chat
 
