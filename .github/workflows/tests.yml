@@ -17,7 +17,8 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-      - run: pip install -r requirements.txt pytest
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng fonts-dejavu-core fonts-liberation fonts-crosextra-carlito
+      - run: pip install -r requirements.txt pytest openpyxl==3.1.5 python-pptx==1.0.2
       - run: python -m pytest -q
 
   docker:
