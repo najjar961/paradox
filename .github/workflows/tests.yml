@@ -21,6 +21,18 @@ jobs:
       - run: pip install -r requirements.txt pytest openpyxl==3.1.5 python-pptx==1.0.2
       - run: python -m pytest -q
 
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt pytest playwright==1.56.0
+      - run: python -m playwright install --with-deps chromium
+      - run: python -m pytest tests/browser -q
+
   docker:
     runs-on: ubuntu-latest
     steps:
