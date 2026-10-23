@@ -155,8 +155,8 @@ function emptyState(noWorkspace) {
     h.textContent = tr("Create a workspace to begin");
     p.textContent = tr("Use the + button in the sidebar.");
   } else {
-    h.textContent = tr("Upload a document, then ask or edit");
-    p.textContent = tr("Open Documents to add a PDF, Word file or text. Ask questions, or say “rewrite this more formally” and download the result. Nothing is saved.");
+    h.textContent = tr("Ask anything. Nothing is saved.");
+    p.textContent = tr("Ask without a file, or open Documents to add homework, a contract or a report. The buttons above the box help: explain step by step, check a solution, summarise, translate.");
   }
   d.append(h, p);
   return d;
@@ -306,22 +306,7 @@ function escapeHtml(s) {
 
 // Minimal, safe markdown: everything is escaped first, then a few patterns are re-styled.
 function renderMarkdown(src) {
-  const blocks = escapeHtml(src).replace(/\n[ \t]*-{3,}[ \t]*(?=\n|$)/g, "\n\n---\n\n").split(/```/);
-  return blocks.map((part, i) => {
-    if (i % 2 === 1) {
-      const body = part.replace(/^[a-zA-Z0-9_-]*\n/, "");
-      return `<pre><code>${body}</code></pre>`;
-    }
-    return part.split(/\n{2,}/).filter((p) => p.trim()).map((p) => {
-      if (/^\s*-{3,}\s*$/.test(p)) return '<hr class="sep">';
-      let h = p
-        .replace(/`([^`\n]+)`/g, "<code>$1</code>")
-        .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
-        .replace(/\[(\d{1,2})\]/g, '<button class="cite" data-cite="$1">$1</button>')
-        .replace(/\n/g, "<br>");
-      return `<p>${h}</p>`;
-    }).join("");
-  }).join("");
+  return window.pdxMarkdown.render(src); // markdown.js: escaped text, lists, headings, math
 }
 
 function userBubble(text) {
@@ -961,6 +946,35 @@ function attachCompare(msgEl, [oldId, newId]) {
   msgEl.append(el("div", { className: "sources" }, btn));
 }
 
+// ------------------------------------------------------------------ quick tasks
+
+// One click puts a ready instruction in the box; the user adds their text and sends.
+const TASKS = [
+  ["Explain step by step", "Explain step by step: "],
+  ["Check my solution", "Check my solution and show me exactly where any mistakes are: "],
+  ["Give me a hint", "Give me a hint for this, not the full solution: "],
+  ["Summarise", "Summarise this in a few bullet points."],
+  ["Write a draft", "Write a draft: "],
+  ["Translate", "Translate this into English: "],
+];
+
+function renderTasks() {
+  const row = $("#tasks");
+  row.replaceChildren(...TASKS.map(([label, prompt]) => {
+    const b = Object.assign(document.createElement("button"), { type: "button", className: "task-chip", textContent: tr(label) });
+    b.addEventListener("click", () => {
+      const box = $("#chat-input");
+      const start = tr(prompt);
+      const rest = box.value.trim();
+      box.value = rest.startsWith(start.trim()) ? rest : start + rest;
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+      box.dispatchEvent(new Event("input"));
+    });
+    return b;
+  }));
+}
+
 // ------------------------------------------------------------------ language
 
 // Re-label the page in place; reloading is avoided so nothing on screen is lost.
@@ -977,14 +991,10 @@ function relabel() {
   if (!state.busy) { $("#send").textContent = tr("Send"); }
   else setStreaming(true);
   renderDocs();
-  const other = window.i18n.lang === "de" ? "en" : "de";
-  $("#lang").textContent = other.toUpperCase();
-  $("#lang").setAttribute("aria-label", other === "de" ? "Sprache: Deutsch" : "Language: English");
-  $("#lang-login").textContent = other === "de" ? "Deutsch" : "English";
+  renderTasks();
 }
-const switchLang = () => window.i18n.set(window.i18n.lang === "de" ? "en" : "de");
-$("#lang").addEventListener("click", switchLang);
-$("#lang-login").addEventListener("click", switchLang);
+window.i18n.picker($("#lang"));
+window.i18n.picker($("#lang-login"));
 window.i18n.onChange(relabel);
 relabel();
 

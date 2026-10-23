@@ -649,6 +649,9 @@ const PII_RULES = [
   { type: "card", re: /\b\d(?:[ -]?\d){12,18}\b/g, check: luhn },
   { type: "phone", re: /(?:(?:\+|00)\d{1,3}[\s./-]?(?:\(0\)[\s./-]?)?|\b0)\d{2,5}(?:[\s./-]?\d{2,8}){1,4}\b/g,
     check: (v) => { const n = v.replace(/\D/g, "").length; return n >= 7 && n <= 15 && !/^\d{1,2}\.\d{1,2}\.\d{2,4}$/.test(v.trim()); } },
+  // Lebanon: +961 3 123 456, 03 123 456, 70-123456, 01 234 567
+  { type: "phone", re: /(?:(?:\+|00)961[\s.-]?0?[1-9]\d?|\b0[1-9]|\b(?:7[016-9]|81))[\s./-]?\d{3}[\s./-]?\d{3}\b/g,
+    check: (v) => { const n = v.replace(/\D/g, "").length; return n >= 7 && n <= 15; } },
   { type: "birthdate", re: /(?:geb(?:oren)?\.?(?:\s+am)?|Geburtsdatum:?|date of birth:?|born(?:\s+on)?|DOB:?|né(?:e)? le)\s*(\d{1,2}[./-]\s?\d{1,2}[./-]\s?\d{2,4}|\d{1,2}\.?\s+\p{L}+\s+\d{4})/giu, group: 1 },
   { type: "id", re: /(?:Steuer-?ID|Steuer-?Identifikationsnummer|Steuernummer|Sozialversicherungsnummer|SV-Nummer|Personalausweis(?:nummer)?|Ausweisnummer|Reisepass(?:nummer)?|Passport(?: No\.?| number)?|Tax ID|Social Security(?: Number)?|SSN|Versichertennummer|Personalnummer)\s*[:#]?\s*([A-Z0-9][A-Z0-9 /-]{4,24}[A-Z0-9])/giu, group: 1 },
 ];
@@ -657,7 +660,10 @@ const PII_RULES = [
 const NAME_WORD = "\\p{Lu}\\p{Ll}+(?:['’-]\\p{Lu}?\\p{Ll}+)*";
 PII_RULES.push(
   { type: "name", re: new RegExp(`(?:\\b(?:Frau|Herrn?|Hr\\.|Fr\\.|Dr\\.|Prof\\.|Mr\\.?|Mrs\\.?|Ms\\.?|Mme|M\\.|Madame|Monsieur)\\s+(?:(?:Dr|Prof)\\.\\s+)?)(${NAME_WORD}(?:[ -]${NAME_WORD}){0,2})`, "gu"), group: 1 },
-  { type: "name", re: new RegExp(`(?:\\b(?:Name|Vorname|Nachname|Ansprechpartner(?:in)?|Contact|Nom)\\s*:\\s*)(${NAME_WORD}(?:[ -]${NAME_WORD}){0,3})`, "gu"), group: 1 },
+  { type: "name", re: new RegExp(`(?:\\b(?:Name|Vorname|Nachname|Ansprechpartner(?:in)?|Contact|Nom|Prénom)\\s*:\\s*)(${NAME_WORD}(?:[ -]${NAME_WORD}){0,3})`, "gu"), group: 1 },
+  // Arabic: a name after "الاسم:" or a title such as السيد / السيدة
+  { type: "name", re: /(?:الاسم(?:\s+الكامل)?|اسم\s+المستأجر|اسم\s+المالك)[ \u00A0]*[:：]?[ \u00A0]*([\u0621-\u064A]{2,}(?:[ \u00A0][\u0621-\u064A]{2,}){0,2})/gu, group: 1 },
+  { type: "name", re: /(?:السيد|السيدة|الآنسة)[ \u00A0]+([\u0621-\u064A]{2,}(?:[ \u00A0][\u0621-\u064A]{2,})?)/gu, group: 1 },
   { type: "address", re: /\p{Lu}[\p{L}.-]*(?:straße|strasse|str\.|weg|gasse|platz|allee|ring|damm|ufer|chaussee|steig|pfad|street|st\.|road|avenue|lane|rue)\s+\d+\s?[a-zA-Z]?(?:\s*[,\n]\s*\d{5}\s+\p{Lu}[\p{L}-]+(?:\s(?:am|an der|im|in der)\s\p{Lu}[\p{L}-]+)?)?/gu },
   { type: "address", re: /\b\d{5}\s+\p{Lu}[\p{L}-]+(?:\s(?:am|an der|im|in der)\s\p{Lu}[\p{L}-]+)?/gu,
     check: (v) => !/^\d{5}\s+(?:Euro|EUR|Stück|Mitarbeiter|Kunden)/.test(v) },
@@ -727,7 +733,12 @@ export function redactPdf(mupdf, bytes, terms) {
     let scanned = false;
     page.toStructuredText().walk({ onChar(c, o, font) { if (!scanned && /GlyphLess/i.test(font.getName())) scanned = true; } });
     terms.forEach((term, i) => {
-      for (const variant of caseVariants(term)) {
+      const variants = caseVariants(term);
+      if (scanned && /[\u0590-\u08FF\uFB1D-\uFEFC]/.test(term)) {
+        // Tesseract stores Arabic letters in visual order in the text layer.
+        variants.push(term.split(/\s+/).reverse().map((w) => [...w].reverse().join("")).join(" "), [...term].reverse().join(""));
+      }
+      for (const variant of new Set(variants)) {
         for (const hit of page.search(variant)) {
           const key = hit.map((q) => q.map(Math.round).join(",")).join("|");
           if (seen.has(key)) continue;

@@ -274,6 +274,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         buf.clear()
         ext = extension(name)
         scanned = False
+        ocr_text = None
         try:
             if ext in IMAGES:
                 if not ocr.available():
@@ -284,9 +285,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if ext == ".pdf" and await asyncio.to_thread(ocr.needs_ocr, raw):
                 if not ocr.available():
                     raise HTTPException(422, "This PDF is a scan. Text recognition (OCR) isn't installed on this server.")
-                raw = await asyncio.to_thread(ocr.ocr_pdf, raw)
+                raw, ocr_text = await asyncio.to_thread(ocr.ocr_pdf_text, raw)
                 scanned = True
-            text = await asyncio.to_thread(extract_text, name, raw)
+            text = ocr_text if ocr_text and ocr_text.strip() else await asyncio.to_thread(extract_text, name, raw)
         except IngestError as exc:
             raise HTTPException(422, str(exc)) from exc
         except RuntimeError as exc:  # OCR problems

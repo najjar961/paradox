@@ -1,6 +1,7 @@
 import io
 import json
 import os
+from pathlib import Path
 from dataclasses import replace
 
 import bcrypt
@@ -719,3 +720,31 @@ def test_thinking_is_hidden_and_switched_off_for_qwen3():
     assert "think" not in sent
     asyncio.run(run("qwen3:8b", "true"))
     assert sent["think"] is True
+
+
+# ---------------------------------------------------------------- Lebanon: Arabic and French
+
+def test_lebanese_phone_numbers_iban_and_arabic_names():
+    from app.privacy import detect_pii
+    text = ("Tel +961 3 123 456, 03 123 456, 01 234 567, 70-123456. IBAN LB62 0999 0000 0001 0019 0122 9114.\n"
+            "الاسم: رامي حداد\nالسيدة ليلى خوري تسكن في بيروت\nTotal 1 234 567 USD")
+    found = {(f["type"], f["value"]) for f in detect_pii(text)}
+    for v in ("+961 3 123 456", "03 123 456", "01 234 567", "70-123456"):
+        assert ("phone", v) in found
+    assert ("iban", "LB62 0999 0000 0001 0019 0122 9114") in found
+    assert ("name", "رامي حداد") in found and ("name", "ليلى خوري") in found
+    assert not any(v.startswith("1 234") for _, v in found)  # an amount, not a phone number
+
+
+def test_arabic_scan_is_read_in_reading_order_and_redactable():
+    from app import ocr, privacy
+    if not ocr.available() or "ara" not in ocr.langs():
+        pytest.skip("Arabic OCR data not installed")
+    import pymupdf
+    img = (Path(__file__).parent / "fixtures" / "arabic_letter.png").read_bytes()
+    pdf, text = ocr.ocr_pdf_text(ocr.image_to_pdf(img))
+    assert "عقد إيجار" in text or "عقد ايجار" in text
+    assert "الإيجار" in text
+    out, counts, _ = privacy.redact_pdf(pdf, ["الإيجار"])
+    assert counts[0] >= 1
+    assert "راجيإلا" not in pymupdf.open(stream=out, filetype="pdf")[0].get_text()

@@ -6,7 +6,7 @@
 ![license](https://img.shields.io/badge/license-AGPL--3.0-blue)
 ![self-hosted](https://img.shields.io/badge/self--hosted-docker-2f6f5e)
 
-Paradox is a self-hosted, multi-user AI assistant for confidential documents. Upload PDFs, Word files or notes, ask questions, and get answers that cite the exact passage they came from. Documents, embeddings and chat history live only in server RAM for the length of a login session and are dropped on sign-out, after an idle timeout, at a maximum session age, or when the server stops. Run it with a local model through Ollama and your files never leave your own machine.
+Paradox is a self-hosted, multi-user AI assistant for confidential documents and everyday work: contracts, reports, homework. Upload PDFs, Word files or notes, or just ask without a file. Ask questions, work through tasks, and get answers that cite the exact passage they came from. Documents, embeddings and chat history live only in server RAM for the length of a login session and are dropped on sign-out, after an idle timeout, at a maximum session age, or when the server stops. Run it with a local model through Ollama and your files never leave your own machine.
 
 ![Paradox answering a question with a citation](docs/screenshots/chat-light.png)
 
@@ -23,17 +23,19 @@ Paradox is a self-hosted, multi-user AI assistant for confidential documents. Up
 - Multi-user login (accounts from a read-only `users.yaml` of bcrypt hashes)
 - Several workspaces per user, each with its own documents, chat and custom instructions
 - Upload PDF, Word, Excel, PowerPoint, scans and photos, TXT, Markdown, CSV, JSON, HTML and log files
+- **Work on tasks, not just documents:** upload homework or an assignment and use the task buttons above the box: *Explain step by step*, *Check my solution*, *Give me a hint*, *Summarise*, *Write a draft*, *Translate*. By default Paradox tutors (explains the method, checks your work, gives hints) and gives the full solution when you ask for it
+- **Maths:** formulas in answers are rendered properly (KaTeX, as MathML, so the strict content security policy stays)
 - Ask anything about a document, or ask Paradox to edit it ("rewrite this more formally", "fix the typos") and copy or download the result
 - **Fill in PDF forms:** Paradox lists a form's fields with their visible labels; the AI fills them from what you tell it and your other uploaded documents (only listed options and real fields are accepted), you check every value, preview and download. Fields stay editable
-- **Scans and photos:** scanned PDFs and photos (PNG, JPG, TIFF, WebP) are read with OCR in German and English and turned into searchable PDFs, so you can ask about them and redact them (the scanned pixels under a redaction are blanked)
+- **Scans and photos:** scanned PDFs and photos (PNG, JPG, TIFF, WebP) are read with OCR in English, German, French and Arabic (Arabic in the correct reading order) and turned into searchable PDFs, so you can ask about them and redact them (the scanned pixels under a redaction are blanked)
 - **Excel and PowerPoint:** ask about spreadsheets and slides, edit cell text, numbers and slide text in place (formatting, formulas, charts and images untouched; formulas recalculate when opened), and redact them
-- **Remove personal data:** finds names, addresses, emails, phone numbers, IBANs, card numbers, dates of birth and ID numbers, lets you tick what goes, then truly redacts it (the text is removed from the file, not covered) and wipes the author and other hidden properties
+- **Remove personal data:** finds names, addresses, emails, phone numbers (including Lebanese ones), IBANs, card numbers, dates of birth and ID numbers, Arabic names after labels such as الاسم or السيد, lets you tick what goes, then truly redacts it (the text is removed from the file, not covered) and wipes the author and other hidden properties
 - **Preview before download:** every edit or redaction opens a Before/After preview of the real pages with the changes highlighted
 - **Keep original layout:** for PDF and Word files, Paradox proposes precise changes, you tick the ones you want, and it applies them to your original file. Logos, tables, fonts, colours and page layout stay as they were
 - **Meaning-based search:** short documents are read in full; long ones are searched by meaning and by keywords at the same time, so "How long can I cancel?" finds "Die Kündigungsfrist beträgt drei Monate". Every citation says whether it was found by meaning, by keywords or both. Answers stream live with clickable `[1]` citations
 - **Compare two documents:** drop in two versions and ask "what changed?", or click **Compare**. Paradox computes every difference exactly, word by word, shows them in place (removed struck through, added highlighted), and the AI explains what the changes mean. It only explains differences that are really there
 - Model choice: **Ollama** (fully local), **OpenAI** or any OpenAI-compatible server, or **Anthropic**
-- **English and German interface:** follows the browser language, with an EN/DE switch that keeps everything on screen. Answers follow the language of your question
+- **English, German, French and Arabic interface:** follows the browser language, with a language picker that keeps everything on screen. Arabic is laid out right to left. Answers follow the language of your question
 - **Installable and offline (Paradox Lite):** install it like an app; after the first use it opens and works with no internet at all
 - **[Security page](https://najjar961.github.io/paradox/security.html):** what Paradox promises, and step-by-step checks anyone can do in a few minutes to verify it
 - Light and dark mode, works on mobile
@@ -149,7 +151,7 @@ pip install pytest
 python -m pytest -q
 ```
 
-Browser tests drive both apps in a real Chromium with stand-in models (compare, export, stop, German interface, offline mode, the self-hosted login and chat):
+Browser tests drive both apps in a real Chromium with stand-in models (compare, export, stop, task buttons, German, French and Arabic interface, phone layouts in every language, offline mode, the self-hosted login and chat):
 
 ```bash
 pip install playwright && python -m playwright install chromium

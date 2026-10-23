@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /srv
 COPY requirements.txt .
 RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea \
-       tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng \
+       tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng tesseract-ocr-fra tesseract-ocr-ara \
     && rm -rf /var/lib/apt/lists/* \
     && pip install -r requirements.txt && useradd --uid 10001 --no-create-home pdx
 

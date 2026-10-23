@@ -13,6 +13,7 @@
   <meta name="theme-color" content="#2f6f5e">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -65,17 +66,17 @@
         <span id="offline" class="status offline" hidden data-i18n>Works offline</span>
         <span id="status" class="status off" data-en="No model loaded">No model loaded</span>
         <button id="install" class="ghost install" type="button" hidden data-i18n>Install app</button>
-        <button id="lang" class="ghost lang" type="button" aria-label="Sprache: Deutsch">DE</button>
+        <select id="lang" class="lang" aria-label="Language" data-i18n-attr="aria-label"></select>
       </header>
 
       <div id="messages" class="messages" aria-live="polite">
         <div class="empty" id="empty">
-          <h3 data-i18n>Ask about a document, or have it edited</h3>
+          <h3 data-i18n>Ask anything. Nothing is saved.</h3>
           <ol>
             <li data-i18n-html>Pick a model and click <b>Download &amp; start</b>. The first time takes a few minutes.</li>
-            <li data-i18n-html>Drop in a PDF, Word file or text.</li>
-            <li data-i18n-html>Ask a question, or say <i>“rewrite this more formally”</i>, then download the result as PDF or Word.</li>
-            <li data-i18n-html>Two versions of a contract? Drop in both and ask <i>“what changed?”</i></li>
+            <li data-i18n-html>Drop in your homework, a contract or a report, or just ask without a file.</li>
+            <li data-i18n-html>Use the buttons above the box: <i>Explain step by step</i>, <i>Check my solution</i>, <i>Summarise</i>, <i>Translate</i>.</li>
+            <li data-i18n-html>Edit files in their original layout, compare two versions, or black out personal data.</li>
           </ol>
         </div>
       </div>
@@ -84,8 +85,9 @@
         <label class="switch"><input type="checkbox" id="keep-layout" checked> <span data-i18n>Keep original layout</span></label>
         <small class="muted" data-i18n>Changes are applied to your original file.</small>
       </div>
+      <div id="tasks" class="tasks" role="toolbar" aria-label="Quick tasks" data-i18n-attr="aria-label"></div>
       <form id="chat-form" class="composer">
-        <textarea id="chat-input" rows="1" maxlength="8000" placeholder="Load a model to start…" disabled></textarea>
+        <textarea id="chat-input" dir="auto" rows="1" maxlength="8000" placeholder="Load a model to start…" disabled></textarea>
         <button id="send" type="submit" class="primary" disabled>Send</button>
       </form>
     </main>
@@ -105,6 +107,8 @@
   <div id="toast" class="toast" role="status" hidden></div>
 
   <script src="i18n.js"></script>
+  <script src="vendor/katex/katex.min.js"></script>
+  <script src="markdown.js"></script>
   <script src="vendor/mammoth.browser.min.js"></script>
   <script src="vendor/jspdf.umd.min.js"></script>
   <script src="vendor/docx.iife.js"></script>

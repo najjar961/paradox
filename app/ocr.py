@@ -9,7 +9,8 @@ from __future__ import annotations
 import os
 
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
-LANGS = os.environ.get("OCR_LANGS", "deu+eng")
+# Every language whose data is installed is used: German, English, French, Arabic.
+WANTED = os.environ.get("OCR_LANGS", "deu+eng+fra+ara")
 
 
 def _tessdata() -> str | None:
@@ -20,8 +21,11 @@ def _tessdata() -> str | None:
     return None
 
 
-def available() -> bool:
-    return _tessdata() is not None
+def langs() -> str:
+    """The wanted languages that are installed (Docker image: all four)."""
+    path = _tessdata()
+    have = [l for l in WANTED.split("+") if path and os.path.exists(os.path.join(path, f"{l}.traineddata"))]
+    return "+".join(have) or "eng"
 
 
 def needs_ocr(data: bytes) -> bool:
@@ -48,22 +52,32 @@ def image_to_pdf(data: bytes) -> bytes:
     return pdf_bytes
 
 
-def _ocr_page(png: bytes, dpi: int) -> bytes:
-    """One page image -> one-page searchable PDF, via stdin/stdout (no temporary files)."""
+def _tesseract(png: bytes, dpi: int, out: str) -> bytes:
+    """Run Tesseract on one page image via stdin/stdout (no temporary files)."""
     import subprocess
 
     env = {**os.environ, "OMP_THREAD_LIMIT": "1"}
     tessdata = _tessdata()
     if tessdata:
         env["TESSDATA_PREFIX"] = tessdata
-    r = subprocess.run(["tesseract", "stdin", "stdout", "-l", LANGS, "--dpi", str(dpi), "pdf"],
+    r = subprocess.run(["tesseract", "stdin", "stdout", "-l", langs(), "--dpi", str(dpi), out],
                        input=png, capture_output=True, timeout=180, env=env, check=False)
-    if r.returncode != 0 or not r.stdout.startswith(b"%PDF"):
+    if r.returncode != 0:
         raise RuntimeError("Text recognition failed for this scan.")
     return r.stdout
 
 
-def available() -> bool:  # noqa: F811 - needs the program as well as the language data
+def _ocr_page(png: bytes, dpi: int) -> bytes:
+    """One page image -> one-page searchable PDF."""
+    pdf = _tesseract(png, dpi, "pdf")
+    if not pdf.startswith(b"%PDF"):
+        raise RuntimeError("Text recognition failed for this scan.")
+    return pdf
+
+
+
+def available() -> bool:
+    """Needs the program as well as the language data."""
     import shutil
 
     return shutil.which("tesseract") is not None and _tessdata() is not None
@@ -71,6 +85,15 @@ def available() -> bool:  # noqa: F811 - needs the program as well as the langua
 
 def ocr_pdf(data: bytes, dpi: int = 300, max_pages: int = 40) -> bytes:
     """Return a searchable copy of a scanned PDF (same page sizes, image + invisible text)."""
+    return ocr_pdf_text(data, dpi, max_pages)[0]
+
+
+def ocr_pdf_text(data: bytes, dpi: int = 300, max_pages: int = 40) -> tuple[bytes, str]:
+    """Searchable PDF plus its text in reading order.
+
+    The text comes from Tesseract's plain-text output: its PDF text layer keeps Arabic in
+    visual (left-to-right) order and can lose accents, so it is only used for search and redaction.
+    """
     import pymupdf
 
     if not available():
@@ -79,12 +102,15 @@ def ocr_pdf(data: bytes, dpi: int = 300, max_pages: int = 40) -> bytes:
     if src.page_count > max_pages:
         raise RuntimeError(f"Scanned documents with more than {max_pages} pages are not supported.")
     out = pymupdf.open()
+    texts = []
     for page in src:
-        png = page.get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY).tobytes("png")
-        page_pdf = pymupdf.open(stream=_ocr_page(png, dpi), filetype="pdf")
+        d = dpi
+        png = page.get_pixmap(dpi=d, colorspace=pymupdf.csGRAY).tobytes("png")
+        page_pdf = pymupdf.open(stream=_ocr_page(png, d), filetype="pdf")
+        texts.append(_tesseract(png, d, "txt").decode("utf-8", "replace"))
         out.insert_pdf(page_pdf)
         page_pdf.close()
     result = out.tobytes(garbage=3, deflate=True)
     out.close()
     src.close()
-    return result
+    return result, "\n\n".join(t.strip() for t in texts)

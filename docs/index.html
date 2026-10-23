@@ -169,6 +169,8 @@ footer a { color: var(--ink-soft); }
   .life li::after { display: none; }
   .spec div { grid-template-columns: 1fr; gap: 4px; }
 }
+/* Arabic letters join up; letter-spacing would pull them apart. */
+[lang="ar"] * { letter-spacing: 0 !important; }
 </style>
 
 <div class="wrap">
@@ -179,7 +181,7 @@ footer a { color: var(--ink-soft); }
       <a class="opt" href="#how" data-i18n>How it works</a>
       <a href="security.html" data-i18n>Security</a>
       <a class="gh" href="https://github.com/najjar961/paradox" target="_blank" rel="noopener">GitHub</a>
-      <button id="lang" class="langbtn" type="button" aria-label="Sprache: Deutsch">DE</button>
+      <select id="lang" class="langbtn" aria-label="Language" data-i18n-attr="aria-label"></select>
     </div>
   </nav>
 
@@ -192,7 +194,7 @@ footer a { color: var(--ink-soft); }
         <a class="btn solid" href="app/" data-i18n>Try it in your browser</a>
         <a class="btn gh" href="https://github.com/najjar961/paradox" target="_blank" rel="noopener" data-i18n>Self-host it</a>
       </div>
-      <p class="fine" data-i18n>Free · open source · nothing uploaded, nothing stored · English &amp; Deutsch</p>
+      <p class="fine" data-i18n>Free · open source · nothing uploaded, nothing stored</p>
     </div>
 
     <div class="doc" id="doc" aria-live="polite">
@@ -228,7 +230,7 @@ footer a { color: var(--ink-soft); }
       <div><dt data-i18n>Compare</dt><dd data-i18n>Two versions of a contract? See every changed word, and get an explanation of what it means for you.</dd></div>
       <div><dt data-i18n>Black out</dt><dd data-i18n>Names, addresses, IBANs and ID numbers are found and truly removed from the file, not just covered.</dd></div>
       <div><dt data-i18n>Fill in</dt><dd data-i18n>PDF forms are filled from what you tell it and your other documents. You check every field.</dd></div>
-      <div><dt data-i18n>Scans</dt><dd data-i18n>Scanned letters and phone photos are read with text recognition in German and English.</dd></div>
+      <div><dt data-i18n>Scans</dt><dd data-i18n>Scanned letters and phone photos are read with text recognition in German, English, French and Arabic.</dd></div>
     </dl>
   </section>
 
@@ -338,7 +340,7 @@ footer a { color: var(--ink-soft); }
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   let kb = 48.2;
   const showMeter = () => {
-    meter.innerHTML = t("In memory: <b>{kb} KB</b> · on disk: <b>0</b>", { kb: kb.toFixed(1).replace(".", window.i18n.lang === "de" ? "," : ".") });
+    meter.innerHTML = t("In memory: <b>{kb} KB</b> · on disk: <b>0</b>", { kb: kb.toFixed(1).replace(".", ["de", "fr"].includes(window.i18n.lang) ? "," : ".") });
   };
 
   btn.addEventListener("click", () => {
@@ -379,17 +381,14 @@ footer a { color: var(--ink-soft); }
   });
 
   // Language: follows the browser, switchable; links into the app and the security page keep it.
-  const langBtn = document.getElementById("lang");
   function relabel() {
     const de = window.i18n.lang === "de";
     window.i18n.apply(document);
-    document.title = de ? "Paradox · Private KI für vertrauliche Dokumente" : "Paradox";
+    document.title = window.i18n.lang === "en" ? "Paradox" : "Paradox · " + t("Private AI for confidential documents");
     btn.textContent = t(doc.classList.contains("done") ? "Start again" : "Sign out & wipe");
     copy.textContent = t("Copy");
     showMeter();
-    langBtn.textContent = de ? "EN" : "DE";
     document.querySelectorAll("a[data-pdf]").forEach((a) => { a.href = de ? "paradox-fuer-it-und-datenschutz.pdf" : "paradox-for-it-and-data-protection.pdf"; });
-    langBtn.setAttribute("aria-label", de ? "Language: English" : "Sprache: Deutsch");
     document.querySelectorAll('a[href^="app/"], a[href^="security.html"], a[data-href]').forEach((a) => {
       if (!a.dataset.href) a.dataset.href = a.getAttribute("href");
       const u = new URL(a.dataset.href, location.href);
@@ -397,7 +396,7 @@ footer a { color: var(--ink-soft); }
       a.href = u.href;
     });
   }
-  langBtn.addEventListener("click", () => window.i18n.set(window.i18n.lang === "de" ? "en" : "de"));
+  window.i18n.picker(document.getElementById("lang"));
   window.i18n.onChange(relabel);
   relabel();
 })();

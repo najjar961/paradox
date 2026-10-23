@@ -16,9 +16,14 @@
   <nav>
     <a class="mark" href="./"><i></i>Paradox</a>
     <div class="links">
-      <a href="app/" data-en="Open the app" data-de="App öffnen">Open the app</a>
+      <a href="app/" data-en="Open the app" data-de="App öffnen" data-fr="Ouvrir l'application" data-ar="افتح التطبيق">Open the app</a>
       <a href="https://github.com/najjar961/paradox" rel="noopener">GitHub</a>
-      <button id="lang" type="button" class="lang" aria-label="Sprache: Deutsch">DE</button>
+      <select id="lang" class="lang" aria-label="Language">
+        <option value="en">English</option>
+        <option value="de">Deutsch</option>
+        <option value="fr">Français</option>
+        <option value="ar">العربية</option>
+      </select>
     </div>
   </nav>
 
@@ -240,9 +245,227 @@
     </section>
   </article>
 
+  <!-- ===================================================== Français -->
+  <article lang="fr" id="fr" hidden>
+    <header class="hero">
+      <p class="eyebrow">Sécurité</p>
+      <h1>Ne nous faites pas confiance. Vérifiez.</h1>
+      <p class="lede">Paradox fait une seule promesse : vos documents ne sont ni envoyés ni enregistrés. Voici exactement ce que cela veut dire, et comment le vérifier vous-même en cinq minutes environ, sans lire une ligne de code.</p>
+      <p class="pdf"><a href="paradox-for-it-and-data-protection.pdf">Résumé d'une page pour votre service informatique (PDF, en anglais)</a></p>
+    </header>
+
+    <section>
+      <h2>La promesse, précisément</h2>
+      <div class="two">
+        <div class="card">
+          <h3>Paradox Lite <span class="tag">dans votre navigateur</span></h3>
+          <ul>
+            <li>Vos fichiers sont lus dans la page. Ils ne quittent jamais votre appareil.</li>
+            <li>L'IA tourne sur votre propre carte graphique. Il n'existe aucun serveur Paradox qui pourrait recevoir quoi que ce soit.</li>
+            <li>Les fichiers et les conversations n'existent que dans la mémoire de la page. Fermer l'onglet les efface.</li>
+            <li>Seuls l'application et des modèles d'IA publics de Hugging Face sont téléchargés. Rien n'est envoyé.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Auto-hébergé <span class="tag">votre serveur</span></h3>
+          <ul>
+            <li>Les fichiers, les données de recherche et les conversations restent uniquement dans la RAM du serveur, le temps d'une session.</li>
+            <li>La déconnexion, 30 minutes d'inactivité, la durée maximale de session ou un redémarrage les efface.</li>
+            <li>Pas de base de données, aucun fichier écrit, aucun texte de document dans les journaux. Un test échoue si quoi que ce soit est écrit sur le disque.</li>
+            <li>Avec Ollama, rien ne quitte votre serveur.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Vérifiez Paradox Lite vous-même</h2>
+      <p class="intro">Il vous faut Chrome ou Edge sur un ordinateur. Chaque vérification prend environ une minute.</p>
+      <ol class="steps">
+        <li>
+          <h3>Observez chaque connexion</h3>
+          <p>Ouvrez Paradox Lite et appuyez sur <kbd>F12</kbd> (Mac : <kbd>⌥</kbd><kbd>⌘</kbd><kbd>I</kbd>). Cliquez sur l'onglet <b>Réseau</b>, puis chargez un document et posez une question.</p>
+          <p>Vous ne verrez des requêtes que vers <code>najjar961.github.io</code> (l'application elle-même) et, pendant le téléchargement d'un modèle, vers <code>huggingface.co</code> ou <code>raw.githubusercontent.com</code>. Ce sont toutes des téléchargements (<code>GET</code>). Votre document n'apparaît dans aucune requête, parce qu'aucune n'est jamais faite avec lui.</p>
+        </li>
+        <li>
+          <h3>Coupez Internet</h3>
+          <p>Chargez un modèle une fois, pour qu'il soit enregistré dans votre navigateur. Coupez ensuite le Wi-Fi, ou cochez <b>Hors connexion</b> dans l'onglet Réseau, et rechargez la page.</p>
+          <p>Paradox s'ouvre toujours, lit vos fichiers et répond. Un outil qui fonctionne sans aucune connexion ne peut envoyer vos documents nulle part.</p>
+        </li>
+        <li>
+          <h3>Regardez ce que le navigateur a enregistré</h3>
+          <p>Dans les outils de développement, ouvrez <b>Application</b> → <b>Stockage</b>. <b>Local storage</b>, <b>Session storage</b> et <b>IndexedDB</b> sont vides pour Paradox.</p>
+          <p><b>Cache storage</b> ne contient que des fichiers de programme : <code>paradox-shell</code> et <code>paradox-vendor</code> (l'application, pour l'usage hors connexion), <code>webllm/…</code> (le modèle d'IA) et <code>transformers-cache</code> (le modèle de recherche). Ouvrez-les : il n'y a ni document ni conversation.</p>
+        </li>
+        <li>
+          <h3>Lisez le verrou imposé par le navigateur</h3>
+          <p>Clic droit sur la page → <b>Afficher le code source</b>. En haut se trouve une <code>Content-Security-Policy</code>. Sa ligne <code>connect-src</code> liste les seuls sites que la page peut contacter : elle-même et les hébergeurs des modèles. Le navigateur bloque tout le reste, même si le code contenait une erreur.</p>
+        </li>
+        <li>
+          <h3>Vérifiez le code et les tests</h3>
+          <p>Chaque ligne est publique sur <a href="https://github.com/najjar961/paradox" rel="noopener">GitHub</a>. Les bibliothèques tierces sont des copies non modifiées, listées avec leurs versions dans <a href="https://github.com/najjar961/paradox/blob/main/docs/app/vendor/LICENSES.md" rel="noopener">LICENSES.md</a>. Chaque modification lance les tests automatiques, y compris dans un vrai navigateur, visibles sous <a href="https://github.com/najjar961/paradox/actions" rel="noopener">Actions</a>.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Vérifiez la version auto-hébergée</h2>
+      <ol class="steps">
+        <li>
+          <h3>Rien sur le disque</h3>
+          <p>Le système de fichiers du conteneur est en lecture seule : l'application ne pourrait pas enregistrer de fichier même si elle essayait.</p>
+          <pre>docker compose exec paradox touch /srv/test
+→ touch: cannot touch '/srv/test': Read-only file system</pre>
+          <p>Le seul dossier inscriptible, <code>/tmp</code>, est un disque en RAM. Chargez un document et regardez dedans : votre document n'y est pas.</p>
+          <pre>docker compose exec paradox ls -la /tmp</pre>
+          <p>Le test <code>test_nothing_written_to_disk</code> échoue aussi si l'application ouvre un fichier en écriture pendant un envoi ou une conversation.</p>
+        </li>
+        <li>
+          <h3>Rien dans les journaux</h3>
+          <pre>docker compose logs paradox</pre>
+          <p>Vous voyez des lignes de démarrage, pas de noms de fichiers, de questions ni de réponses. Le journal d'accès est désactivé.</p>
+        </li>
+        <li>
+          <h3>Effacé après la déconnexion</h3>
+          <p>Déconnectez-vous et reconnectez-vous : l'espace de travail est vide. Le serveur ne garde aucune copie qu'il pourrait restaurer.</p>
+        </li>
+        <li>
+          <h3>Rien ne quitte votre réseau</h3>
+          <p>Avec <code>LLM_PROVIDER=ollama</code> et <code>EMBED_PROVIDER=ollama</code>, l'IA tourne dans le conteneur <code>ollama</code> à côté de Paradox. Vous pouvez couper l'accès Internet du serveur une fois les modèles téléchargés, et tout continue de fonctionner.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Limites, en toute honnêteté</h2>
+      <ul class="limits">
+        <li><b>Votre appareil compte.</b> Paradox ne peut pas protéger un document contre un logiciel malveillant ou une extension de navigateur capable de lire chaque page. Utilisez un profil de navigateur propre pour les fichiers sensibles.</li>
+        <li><b>Les téléchargements sont visibles.</b> GitHub (qui héberge ce site) et Hugging Face voient votre adresse IP quand vous chargez l'application ou un modèle, comme pour tout site web. Ils ne voient jamais vos documents ni vos questions.</li>
+        <li><b>Le navigateur met le modèle d'IA en cache,</b> pour que le prochain démarrage soit rapide. Ce cache ne contient que le modèle public. Supprimez-le avec « Supprimer le modèle téléchargé de ce navigateur ».</li>
+        <li><b>La mémoire n'est pas broyée.</b> Les données effacées restent dans la RAM jusqu'à ce qu'elles soient écrasées. Sur un serveur, désactivez le swap ou chiffrez-le.</li>
+        <li><b>Les modèles hébergés ont un prix.</b> Si l'application auto-hébergée utilise OpenAI ou Anthropic, les passages concernés et vos questions sont envoyés à ce fournisseur.</li>
+        <li><b>L'IA fait des erreurs.</b> Les réponses citent leurs sources, les modifications et caviardages montrent un aperçu du vrai fichier, et les comparaisons sont calculées exactement, pour que vous puissiez vérifier. La détection automatique des données personnelles peut en manquer.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Vous avez trouvé un problème ?</h2>
+      <p class="intro">Merci de signaler les failles de sécurité en privé, comme décrit dans <a href="https://github.com/najjar961/paradox/blob/main/SECURITY.md" rel="noopener">SECURITY.md</a>, et non dans un ticket public. Vous recevrez une réponse.</p>
+    </section>
+  </article>
+
+  <!-- ===================================================== العربية -->
+  <article lang="ar" dir="rtl" id="ar" hidden>
+    <header class="hero">
+      <p class="eyebrow">الأمان</p>
+      <h1>لا تثق بنا. تحقّق بنفسك.</h1>
+      <p class="lede">يقدّم Paradox وعدًا واحدًا: مستنداتك لا تُرفع ولا تُحفظ. إليك ما يعنيه ذلك بالضبط، وكيف تتحقق منه بنفسك في نحو خمس دقائق، دون قراءة أي سطر من الشيفرة.</p>
+      <p class="pdf"><a href="paradox-for-it-and-data-protection.pdf">ملخّص من صفحة واحدة لقسم تقنية المعلومات (PDF، بالإنجليزية)</a></p>
+    </header>
+
+    <section>
+      <h2>الوعد، بدقّة</h2>
+      <div class="two">
+        <div class="card">
+          <h3>Paradox Lite <span class="tag">في متصفحك</span></h3>
+          <ul>
+            <li>تُقرأ ملفاتك داخل الصفحة، ولا تغادر جهازك أبدًا.</li>
+            <li>يعمل الذكاء الاصطناعي على بطاقة الرسوميات في جهازك. لا يوجد خادم لـ Paradox يمكن أن يستقبل أي شيء.</li>
+            <li>الملفات والمحادثات موجودة في ذاكرة الصفحة فقط. إغلاق التبويب يحذفها.</li>
+            <li>لا يُنزَّل سوى هذا التطبيق ونماذج ذكاء اصطناعي عامة من Hugging Face. لا يُرفع شيء.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>استضافة ذاتية <span class="tag">خادمك</span></h3>
+          <ul>
+            <li>تبقى الملفات وبيانات البحث والمحادثات في ذاكرة الخادم (RAM) فقط، طوال جلسة دخول واحدة.</li>
+            <li>تُحذف عند تسجيل الخروج، أو بعد 30 دقيقة من عدم النشاط، أو عند انتهاء مدة الجلسة، أو عند إعادة التشغيل.</li>
+            <li>لا قاعدة بيانات، ولا ملفات تُكتب، ولا نصوص مستندات في السجلات. يفشل اختبار إذا كُتب أي شيء على القرص.</li>
+            <li>مع Ollama، لا يغادر شيء خادمك على الإطلاق.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>تحقّق من Paradox Lite بنفسك</h2>
+      <p class="intro">تحتاج إلى Chrome أو Edge على حاسوب. كل خطوة تستغرق نحو دقيقة.</p>
+      <ol class="steps">
+        <li>
+          <h3>راقب كل اتصال</h3>
+          <p>افتح Paradox Lite واضغط <kbd>F12</kbd> (على Mac: <kbd>⌥</kbd><kbd>⌘</kbd><kbd>I</kbd>). اختر تبويب <b>Network</b>، ثم ارفع مستندًا واطرح سؤالًا.</p>
+          <p>سترى طلبات إلى <code>najjar961.github.io</code> فقط (التطبيق نفسه)، وأثناء تنزيل نموذج إلى <code>huggingface.co</code> أو <code>raw.githubusercontent.com</code>. كلها تنزيلات (<code>GET</code>). لا يظهر مستندك في أي طلب، لأنه لا يُرسل أي طلب به أصلًا.</p>
+        </li>
+        <li>
+          <h3>اقطع الإنترنت</h3>
+          <p>حمّل نموذجًا مرة واحدة ليُحفظ في متصفحك. ثم أطفئ Wi-Fi، أو فعّل <b>Offline</b> في تبويب Network، وأعد تحميل الصفحة.</p>
+          <p>يظل Paradox يفتح ويقرأ ملفاتك ويجيب. أداة تعمل دون أي اتصال بالإنترنت لا يمكنها إرسال مستنداتك إلى أي مكان.</p>
+        </li>
+        <li>
+          <h3>انظر إلى ما حفظه المتصفح</h3>
+          <p>في أدوات المطوّر، افتح <b>Application</b> ← <b>Storage</b>. ستجد <b>Local storage</b> و<b>Session storage</b> و<b>IndexedDB</b> فارغة بالنسبة لـ Paradox.</p>
+          <p>لا يحتوي <b>Cache storage</b> إلا على ملفات البرنامج: <code>paradox-shell</code> و<code>paradox-vendor</code> (التطبيق، للعمل دون اتصال)، و<code>webllm/…</code> (نموذج الذكاء الاصطناعي)، و<code>transformers-cache</code> (نموذج البحث). افتحها: لا يوجد فيها أي مستند أو محادثة.</p>
+        </li>
+        <li>
+          <h3>اقرأ القفل الذي يفرضه المتصفح</h3>
+          <p>انقر بزر الفأرة الأيمن على الصفحة ← <b>View page source</b>. ستجد في الأعلى <code>Content-Security-Policy</code>. يذكر سطر <code>connect-src</code> المواقع الوحيدة التي يمكن للصفحة الاتصال بها: نفسها ومستضيفي النماذج. يحظر المتصفح كل ما عدا ذلك، حتى لو كان في الشيفرة خطأ.</p>
+        </li>
+        <li>
+          <h3>تحقّق من الشيفرة والاختبارات</h3>
+          <p>كل سطر منشور علنًا على <a href="https://github.com/najjar961/paradox" rel="noopener">GitHub</a>. المكتبات الخارجية نسخ غير معدّلة، مدرجة مع إصداراتها في <a href="https://github.com/najjar961/paradox/blob/main/docs/app/vendor/LICENSES.md" rel="noopener">LICENSES.md</a>. كل تعديل يشغّل الاختبارات الآلية، بما فيها اختبارات في متصفح حقيقي، ويمكنك رؤيتها في <a href="https://github.com/najjar961/paradox/actions" rel="noopener">Actions</a>.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>تحقّق من نسخة الاستضافة الذاتية</h2>
+      <ol class="steps">
+        <li>
+          <h3>لا شيء على القرص</h3>
+          <p>نظام ملفات الحاوية للقراءة فقط، فلا يستطيع التطبيق حفظ أي ملف حتى لو حاول:</p>
+          <pre dir="ltr">docker compose exec paradox touch /srv/test
+→ touch: cannot touch '/srv/test': Read-only file system</pre>
+          <p>المجلد الوحيد القابل للكتابة، <code>/tmp</code>، قرص في الذاكرة. ارفع مستندًا وانظر داخله: مستندك ليس هناك.</p>
+          <pre dir="ltr">docker compose exec paradox ls -la /tmp</pre>
+          <p>ويفشل الاختبار <code>test_nothing_written_to_disk</code> أيضًا إذا فتح التطبيق أي ملف للكتابة أثناء الرفع أو المحادثة.</p>
+        </li>
+        <li>
+          <h3>لا شيء في السجلات</h3>
+          <pre dir="ltr">docker compose logs paradox</pre>
+          <p>سترى أسطر بدء التشغيل فقط، لا أسماء ملفات ولا أسئلة ولا أجوبة. سجل الوصول معطّل.</p>
+        </li>
+        <li>
+          <h3>يختفي بعد تسجيل الخروج</h3>
+          <p>سجّل الخروج ثم ادخل مجددًا: مساحة العمل فارغة. لا يحتفظ الخادم بأي نسخة يمكنه استعادتها.</p>
+        </li>
+        <li>
+          <h3>لا شيء يغادر شبكتك</h3>
+          <p>مع <code>LLM_PROVIDER=ollama</code> و<code>EMBED_PROVIDER=ollama</code> يعمل الذكاء الاصطناعي في حاوية <code>ollama</code> بجانب Paradox. يمكنك قطع الإنترنت عن الخادم بعد تنزيل النماذج، وسيستمر كل شيء في العمل.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>حدود، بصراحة</h2>
+      <ul class="limits">
+        <li><b>جهازك مهم.</b> لا يستطيع Paradox حماية مستند من برمجيات خبيثة أو إضافات متصفح تقرأ كل صفحة تفتحها. استخدم ملف تعريف نظيفًا في المتصفح للملفات الحساسة.</li>
+        <li><b>التنزيلات مرئية.</b> يرى GitHub (الذي يستضيف هذا الموقع) وHugging Face عنوان IP الخاص بك عند تحميل التطبيق أو نموذج، كأي موقع ويب. لكنهما لا يريان مستنداتك أو أسئلتك أبدًا.</li>
+        <li><b>يخزّن المتصفح نموذج الذكاء الاصطناعي مؤقتًا</b> ليكون التشغيل التالي سريعًا. لا يحتوي هذا التخزين إلا على النموذج العام. احذفه عبر «حذف النموذج المنزّل من هذا المتصفح».</li>
+        <li><b>الذاكرة لا تُمحى فورًا.</b> تبقى البيانات المحذوفة في الذاكرة حتى يُكتب فوقها. على الخادم، أوقف ذاكرة التبديل (swap) أو شفّرها.</li>
+        <li><b>للنماذج المستضافة ثمن.</b> إذا ضُبط التطبيق المستضاف ذاتيًا على OpenAI أو Anthropic، تُرسل المقاطع ذات الصلة وأسئلتك إلى ذلك المزوّد.</li>
+        <li><b>الذكاء الاصطناعي يخطئ.</b> تذكر الأجوبة مصادرها، وتعرض التعديلات والتنقيحات معاينة للملف الحقيقي، وتُحسب المقارنات بدقة، لتتمكن من التحقق. وقد يفوت الكشفَ الآلي عن البيانات الشخصية بعضُها.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>وجدت مشكلة؟</h2>
+      <p class="intro">يُرجى الإبلاغ عن الثغرات الأمنية بشكل خاص، كما هو موضّح في <a href="https://github.com/najjar961/paradox/blob/main/SECURITY.md" rel="noopener">SECURITY.md</a>، وليس في بلاغ عام. ستتلقى ردًّا.</p>
+    </section>
+  </article>
+
   <footer>
     <span>Paradox · open source · AGPL-3.0</span>
-    <a href="./" data-en="← Back to the start page" data-de="← Zurück zur Startseite">← Back to the start page</a>
+    <a href="./" data-en="← Back to the start page" data-de="← Zurück zur Startseite" data-fr="← Retour à l'accueil" data-ar="→ العودة إلى الصفحة الرئيسية">← Back to the start page</a>
   </footer>
 </div>
 <script src="security.js"></script>

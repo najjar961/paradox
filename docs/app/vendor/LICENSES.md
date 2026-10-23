@@ -15,7 +15,8 @@ These are unmodified copies, served from this site so that visitors' browsers ne
 | mupdf/* | [MuPDF.js](https://github.com/ArtifexSoftware/mupdf.js) | 1.28.1 | AGPL-3.0 |
 | tesseract/tesseract.min.js, tesseract/worker.min.js | [Tesseract.js](https://github.com/naptha/tesseract.js) | 7.0.0 | Apache-2.0 |
 | tesseract/core/* | [tesseract.js-core](https://github.com/naptha/tesseract.js-core) (Tesseract OCR compiled to WebAssembly) | 7.0.0 | Apache-2.0 |
-| tesseract/lang/deu, eng | [tessdata_best (integerised)](https://github.com/tesseract-ocr/tessdata_best) via @tesseract.js-data | 4.0.0 | Apache-2.0 |
+| tesseract/lang/deu, eng, fra, ara | [tessdata_best (integerised)](https://github.com/tesseract-ocr/tessdata_best) via @tesseract.js-data | 4.0.0 | Apache-2.0 |
+| katex/katex.min.js, katex.min.css, fonts/*.woff2 | [KaTeX](https://github.com/KaTeX/KaTeX) (maths formulas) | 0.18.11 | MIT |
 | jszip.min.js | [JSZip](https://github.com/Stuk/jszip) | 3.10.2 | MIT |
 | transformers/transformers.min.js | [Transformers.js](https://github.com/huggingface/transformers.js) (@huggingface/transformers, includes ONNX Runtime Web) | 4.3.0 | Apache-2.0 |
 | transformers/ort-wasm-simd-threaded.asyncify.* | [ONNX Runtime Web](https://github.com/microsoft/onnxruntime) | 1.31.0-dev.20260914 | MIT |

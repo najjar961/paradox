@@ -157,10 +157,32 @@ def test_lite_german_and_switch_keeps_documents(browser, site, files):
     pg.set_input_files("#file-input", files)
     pg.locator("#doc-list .doc-tools").nth(1).wait_for()
     assert pg.locator(".doc-tools button").first.inner_text() == "Vergleichen"
-    pg.click("#lang")
+    pg.select_option("#lang", "en")
     assert pg.inner_text("#load-model") == "Download & start"
     assert "lang=en" in pg.url
     assert pg.locator("#doc-list .name").all_inner_texts() == ["vertrag_v1.txt", "vertrag_v2.txt"]
+    assert not pg.errors, pg.errors
+
+
+def test_lite_arabic_is_right_to_left_and_french_translates(browser, site):
+    pg = page_for(browser, locale="ar-LB")
+    pg.goto(f"{site}/app/#selftest")
+    assert pg.get_attribute("html", "lang") == "ar"
+    assert pg.get_attribute("html", "dir") == "rtl"
+    pg.select_option("#lang", "fr")
+    assert pg.get_attribute("html", "dir") == "ltr"
+    assert "lang=fr" in pg.url
+    assert pg.inner_text("#load-model") != "Download & start"
+    assert not pg.errors, pg.errors
+
+
+def test_task_chip_fills_the_question(browser, site):
+    pg = page_for(browser)
+    pg.goto(f"{site}/app/#selftest")
+    pg.click("#load-model")
+    pg.locator("#model-ready").wait_for()
+    pg.locator("#tasks button").first.click()
+    assert pg.input_value("#chat-input").strip() != ""
     assert not pg.errors, pg.errors
 
 
@@ -186,7 +208,7 @@ def test_lite_works_offline_after_first_visit(browser, site, files):
 
 def test_static_pages_load_cleanly_on_phones(browser, site):
     for path in ["/", "/security.html", "/app/"]:
-        for locale in ["en-US", "de-DE"]:
+        for locale in ["en-US", "de-DE", "fr-FR", "ar-LB"]:
             pg = page_for(browser, locale=locale, width=390)
             pg.goto(site + path)
             pg.wait_for_timeout(300)
@@ -196,6 +218,15 @@ def test_static_pages_load_cleanly_on_phones(browser, site):
 
 
 # ---------------------------------------------------------------- self-hosted app
+
+def test_server_login_fits_phones_in_every_language(browser, server):
+    for locale in ["en-US", "de-DE", "fr-FR", "ar-LB"]:
+        pg = page_for(browser, locale=locale, width=390)
+        pg.goto(server)
+        pg.wait_for_timeout(200)
+        assert pg.evaluate("document.documentElement.scrollWidth") <= 390, locale
+        assert not pg.errors, (locale, pg.errors)
+        pg.context.close()
 
 def test_server_app_login_chat_compare_in_german(browser, server, files):
     pg = page_for(browser, locale="de-DE")

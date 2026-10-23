@@ -117,6 +117,8 @@ PII_RULES = [
     ("iban", re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b"), _iban_ok, 0),
     ("card", re.compile(r"\b\d(?:[ -]?\d){12,18}\b"), _luhn, 0),
     ("phone", re.compile(r"(?:(?:\+|00)\d{1,3}[\s./-]?(?:\(0\)[\s./-]?)?|\b0)\d{2,5}(?:[\s./-]?\d{2,8}){1,4}\b"), _phone_ok, 0),
+    # Lebanon: +961 3 123 456, 03 123 456, 70-123456, 01 234 567
+    ("phone", re.compile(r"(?:(?:\+|00)961[\s.-]?0?[1-9]\d?|\b0[1-9]|\b(?:7[016-9]|81))[\s./-]?\d{3}[\s./-]?\d{3}\b"), _phone_ok, 0),
     ("birthdate", re.compile(r"(?:geb(?:oren)?\.?(?:\s+am)?|Geburtsdatum:?|date of birth:?|born(?:\s+on)?|DOB:?|né(?:e)? le)\s*"
                              r"(\d{1,2}[./-]\s?\d{1,2}[./-]\s?\d{2,4}|\d{1,2}\.?\s+\w+\s+\d{4})", re.I), None, 1),
     ("id", re.compile(r"(?:Steuer-?ID|Steuer-?Identifikationsnummer|Steuernummer|Sozialversicherungsnummer|SV-Nummer|"
@@ -125,8 +127,12 @@ PII_RULES = [
                       re.I), None, 1),
     ("name", re.compile(rf"\b(?:Frau|Herrn?|Hr\.|Fr\.|Dr\.|Prof\.|Mr\.?|Mrs\.?|Ms\.?|Mme|Madame|Monsieur)\s+(?:(?:Dr|Prof)\.\s+)?"
                         rf"({_NAME_WORD}(?:[ -]{_NAME_WORD}){{0,2}})"), None, 1),
-    ("name", re.compile(rf"\b(?:Name|Vorname|Nachname|Ansprechpartner(?:in)?|Contact|Nom)\s*:\s*({_NAME_WORD}(?:[ -]{_NAME_WORD}){{0,3}})"),
+    ("name", re.compile(rf"\b(?:Name|Vorname|Nachname|Ansprechpartner(?:in)?|Contact|Nom|Prénom)\s*:\s*({_NAME_WORD}(?:[ -]{_NAME_WORD}){{0,3}})"),
      None, 1),
+    # Arabic: a name after "الاسم:" or a title such as السيد / السيدة
+    ("name", re.compile(r"(?:الاسم(?:\s+الكامل)?|اسم\s+المستأجر|اسم\s+المالك)[ \u00A0]*[:：]?[ \u00A0]*"
+                        r"([\u0621-\u064A]{2,}(?:[ \u00A0][\u0621-\u064A]{2,}){0,2})"), None, 1),
+    ("name", re.compile(r"(?:السيد|السيدة|الآنسة)[ \u00A0]+([\u0621-\u064A]{2,}(?:[ \u00A0][\u0621-\u064A]{2,})?)"), None, 1),
     ("address", re.compile(r"[A-ZÄÖÜ][\w.-]*(?:straße|strasse|str\.|weg|gasse|platz|allee|ring|damm|ufer|chaussee|steig|pfad|"
                            r"street|st\.|road|avenue|lane|rue)\s+\d+\s?[a-zA-Z]?(?:\s*[,\n]\s*\d{5}\s+[A-ZÄÖÜ][\w-]+"
                            r"(?:\s(?:am|an der|im|in der)\s[A-ZÄÖÜ][\w-]+)?)?"), None, 0),
@@ -173,6 +179,9 @@ def parse_pii_answer(answer: str, text: str) -> list[dict]:
     return out
 
 
+_RTL = re.compile(r"[\u0590-\u08FF\uFB1D-\uFEFC]")
+
+
 def redact_pdf(data: bytes, terms: list[str]) -> tuple[bytes, list[int], list[dict]]:
     import pymupdf
 
@@ -188,7 +197,13 @@ def redact_pdf(data: bytes, terms: list[str]) -> tuple[bytes, list[int], list[di
         for i, term in enumerate(terms):
             # PyMuPDF's search ignores case, so one search finds every spelling.
             prev = None
-            for quads in page.search_for(term, quads=True, flags=pymupdf.TEXT_DEHYPHENATE):
+            variants = [term]
+            if scanned and _RTL.search(term):
+                # Tesseract stores Arabic letters in visual order in the text layer.
+                variants.append(" ".join(w[::-1] for w in reversed(term.split())))
+                variants.append(term[::-1])
+            found = [q for v in dict.fromkeys(variants) for q in page.search_for(v, quads=True, flags=pymupdf.TEXT_DEHYPHENATE)]
+            for quads in found:
                 r = quads.rect
                 # one match can come back as several boxes (one per word or line): count it once
                 same_hit = prev is not None and (

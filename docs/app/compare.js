@@ -234,6 +234,7 @@ export function render(result, context = 1) {
     if (!near[i]) { hidden++; return; }
     skip();
     const p = document.createElement("p");
+    p.dir = "auto"; // Arabic and Hebrew paragraphs read right to left
     if (b.type === "same") { p.className = "cmp-same"; p.textContent = b.text; out.push(p); return; }
     p.className = "cmp-change " + (!b.old ? "cmp-add" : !b.new ? "cmp-del" : "cmp-chg");
     p.dataset.n = n;

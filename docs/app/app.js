@@ -537,7 +537,7 @@ async function getOcrWorker(onProgress) {
   });
   if (!ocrWorker) {
     const base = new URL("vendor/tesseract/", location.href).href;
-    ocrWorker = await window.Tesseract.createWorker(["deu", "eng"], 1, {
+    ocrWorker = await window.Tesseract.createWorker(["deu", "eng", "fra", "ara"], 1, {
       workerPath: `${base}worker.min.js`, corePath: `${base}core/`, langPath: `${base}lang`,
       gzip: true, cacheMethod: "none", workerBlobURL: true,
       logger: (m) => { if (m.status === "recognizing text" && ocrWorker?._onProgress) ocrWorker._onProgress(m.progress); },
@@ -550,6 +550,7 @@ async function getOcrWorker(onProgress) {
 const OCR_DPI = 200;
 
 // Scanned PDF or photo -> searchable PDF (the page image plus invisible text), page by page.
+// Also returns the text in reading order: the PDF's text layer keeps Arabic in visual order.
 async function ocrToPdf(bytes, mimeType, onProgress) {
   const mupdf = await loadMupdf();
   const src = mupdf.Document.openDocument(bytes, mimeType);
@@ -558,15 +559,17 @@ async function ocrToPdf(bytes, mimeType, onProgress) {
   const worker = await getOcrWorker(() => {});
   await worker.setParameters({ user_defined_dpi: String(OCR_DPI) });
   const outDoc = new mupdf.PDFDocument();
+  const texts = [];
   for (let p = 0; p < pages; p++) {
     worker._onProgress = (x) => onProgress((p + x) / pages);
     const png = src.loadPage(p).toPixmap(mupdf.Matrix.scale(OCR_DPI / 72, OCR_DPI / 72), mupdf.ColorSpace.DeviceGray, false).asPNG();
     const { data } = await worker.recognize(new Blob([png], { type: "image/png" }), {}, { pdf: true });
     const pagePdf = new mupdf.PDFDocument(new Uint8Array(data.pdf));
     outDoc.graftPage(-1, pagePdf, 0);
+    texts.push((data.text || "").trim());
   }
   onProgress(1);
-  return outDoc.saveToBuffer("garbage=compact,compress").asUint8Array().slice();
+  return { pdf: outDoc.saveToBuffer("garbage=compact,compress").asUint8Array().slice(), text: texts.join("\n\n") };
 }
 
 async function pdfInfo(bytes) {
@@ -594,15 +597,13 @@ async function addFiles(files) {
       let original = new Uint8Array(await file.arrayBuffer());
       const onProgress = (x) => { progress.set(file.name, x); show(); };
       if (IMAGE_EXT.includes(kind)) {
-        original = await ocrToPdf(original, file.type || `image/${kind}`, onProgress);
+        ({ pdf: original, text } = await ocrToPdf(original, file.type || `image/${kind}`, onProgress));
         kind = "pdf"; name = file.name.replace(/\.[^.]+$/, ".pdf"); scanned = true;
-        text = (await pdfInfo(original)).text;
       } else if (kind === "pdf") {
         const info = await pdfInfo(original);
         if (info.text.replace(/\s+/g, "").length < 40 * info.pages && info.images > 0) {
-          original = await ocrToPdf(original, "application/pdf", onProgress);
+          ({ pdf: original, text } = await ocrToPdf(original, "application/pdf", onProgress));
           scanned = true;
-          text = (await pdfInfo(original)).text;
         } else text = await extractText(file);
       } else if (kind === "xlsx") text = await office.xlsxText(window.JSZip, original);
       else if (kind === "pptx") text = await office.pptxText(window.JSZip, original);
@@ -653,7 +654,7 @@ $("#menu").addEventListener("click", () => $("#side").classList.toggle("open"));
 
 // ------------------------------------------------------------------ prompt
 
-const RULES = `You are Paradox, a private assistant that helps the user understand and edit their own documents. You run entirely inside the user's web browser.
+const RULES = `You are Paradox, a private assistant for the user's documents and everyday tasks. You run entirely inside the user's web browser.
 
 In each message, the text of the user's files (the whole document, or the most relevant excerpts) appears inside <sources>, followed by the user's request. These are the user's own documents, shared with you on purpose: read them, quote them, summarise them, answer questions about them and edit them freely.
 
@@ -666,6 +667,11 @@ How to edit:
 - Keep everything the user did not ask you to change, including names, dates and facts.
 - After the revised text, write a line containing only --- and then one short line listing what you changed.
 - For a follow-up edit ("make it shorter"), apply it to your latest version.
+
+Tasks, homework and study:
+- You also help with any task, with or without documents: explaining, writing, planning, calculating, translating and coding.
+- For homework, exercises and exam practice, act as a tutor by default: explain the method step by step, check the user's own solution and point to the exact mistake, or give a hint. When the user asks for the full solution ("solve it", "full solution"), give the complete worked solution.
+- Write formulas in LaTeX: \\( ... \\) inside a sentence, and $$ ... $$ on their own line. Use numbered steps for methods.
 
 Files:
 - You cannot create, convert or attach files, and you must never claim that you did. Under every answer there are buttons to download it as PDF, Word or text. If the user asks for a file, give the final text and tell them to use the "PDF" or "Word" button below your answer.
@@ -732,18 +738,7 @@ function escapeHtml(s) {
 }
 
 function renderMarkdown(src) {
-  return escapeHtml(src).replace(/\n[ \t]*-{3,}[ \t]*(?=\n|$)/g, "\n\n---\n\n").split(/```/).map((part, i) => {
-    if (i % 2 === 1) return `<pre><code>${part.replace(/^[a-zA-Z0-9_-]*\n/, "")}</code></pre>`;
-    return part.split(/\n{2,}/).filter((p) => p.trim()).map((p) => {
-      if (/^\s*-{3,}\s*$/.test(p)) return '<hr class="sep">';
-      const h = p
-        .replace(/`([^`\n]+)`/g, "<code>$1</code>")
-        .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
-        .replace(/\[(\d{1,2})\]/g, '<button class="cite" type="button" data-cite="$1">$1</button>')
-        .replace(/\n/g, "<br>");
-      return `<p>${h}</p>`;
-    }).join("");
-  }).join("");
+  return window.pdxMarkdown.render(src); // markdown.js: escaped text, lists, headings, math
 }
 
 function bubble(role, text) {
@@ -1494,6 +1489,36 @@ function openCompare(d, otherId) {
 
 // ------------------------------------------------------------------ boot
 
+// ------------------------------------------------------------------ quick tasks
+
+// One click puts a ready instruction in the box; the user adds their text and sends.
+const TASKS = [
+  ["Explain step by step", "Explain step by step: "],
+  ["Check my solution", "Check my solution and show me exactly where any mistakes are: "],
+  ["Give me a hint", "Give me a hint for this, not the full solution: "],
+  ["Summarise", "Summarise this in a few bullet points."],
+  ["Write a draft", "Write a draft: "],
+  ["Translate", "Translate this into English: "],
+];
+
+function renderTasks() {
+  const row = $("#tasks");
+  row.replaceChildren(...TASKS.map(([label, prompt]) => {
+    const b = Object.assign(document.createElement("button"), { type: "button", className: "task-chip", textContent: tr(label) });
+    b.addEventListener("click", () => {
+      const box = $("#chat-input");
+      if (box.disabled) { toast("Load a model first"); return; }
+      const start = tr(prompt);
+      const rest = box.value.trim();
+      box.value = rest.startsWith(start.trim()) ? rest : start + rest;
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+      box.dispatchEvent(new Event("input"));
+    });
+    return b;
+  }));
+}
+
 // ------------------------------------------------------------------ install & offline
 
 // The service worker (sw.js) keeps a copy of this app's own files so it opens without
@@ -1545,11 +1570,9 @@ function relabel() {
   updateModelNote();
   renderDocs();
   renderMeaning();
-  const other = window.i18n.lang === "de" ? "en" : "de";
-  $("#lang").textContent = other.toUpperCase();
-  $("#lang").setAttribute("aria-label", other === "de" ? "Sprache: Deutsch" : "Language: English");
+  renderTasks();
 }
-$("#lang").addEventListener("click", () => window.i18n.set(window.i18n.lang === "de" ? "en" : "de"));
+window.i18n.picker($("#lang"));
 window.i18n.onChange(relabel);
 
 initModelCard();

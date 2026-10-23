@@ -48,7 +48,7 @@ button:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visi
 select, textarea { width: 100%; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); padding: 9px 11px; }
 
 .app { display: grid; grid-template-columns: 320px 1fr; height: 100%; }
-.side { background: var(--surface); border-right: 1px solid var(--border); padding: 18px 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+.side { background: var(--surface); border-inline-end: 1px solid var(--border); padding: 18px 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 17px; text-decoration: none; color: var(--text); }
 .brand .lite { font-weight: 500; color: var(--accent); }
 .dot { width: 11px; height: 11px; border-radius: 50%; border: 2px dashed var(--accent); }
@@ -79,7 +79,7 @@ select, textarea { width: 100%; border: 1px solid var(--border); border-radius: 
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .top { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
 .top h1 { font-size: 16px; margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.status { font: 12px var(--mono); padding: 4px 9px; border-radius: 20px; border: 1px solid var(--border); white-space: nowrap; }
+.status { font: 12px var(--mono); padding: 4px 9px; border-radius: 20px; border: 1px solid var(--border); white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .status.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
 .status.busy { color: var(--warn-ink); }
 .only-narrow { display: none; }
@@ -87,7 +87,7 @@ select, textarea { width: 100%; border: 1px solid var(--border); border-radius: 
 .messages { flex: 1; overflow-y: auto; padding: 24px max(20px, calc((100% - 760px) / 2)); display: flex; flex-direction: column; gap: 18px; }
 .empty { margin: auto; max-width: 460px; color: var(--muted); }
 .empty h3 { color: var(--text); margin: 0 0 10px; font-size: 18px; text-wrap: balance; }
-.empty ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.empty ol { margin: 0; padding-inline-start: 20px; display: grid; gap: 6px; }
 
 .msg.user { align-self: flex-end; max-width: 80%; background: var(--user-bubble); color: var(--user-ink); padding: 10px 14px; border-radius: 16px 16px 4px 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg.assistant { align-self: stretch; overflow-wrap: anywhere; min-width: 0; }
@@ -120,7 +120,7 @@ hr.sep { border: 0; border-top: 1px dashed var(--border); margin: 12px 0; }
 
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
-  .side { position: fixed; inset: 0 auto 0 0; width: min(330px, 92vw); z-index: 5; transform: translateX(-100%); transition: transform .2s; }
+  .side { position: fixed; inset-block: 0; inset-inline-start: 0; width: min(330px, 92vw); z-index: 5; transform: translateX(-100%); transition: transform .2s; }
   .side.open { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.3); }
   .only-narrow { display: inline-block; }
   .top { padding: 10px 16px; }
@@ -234,15 +234,39 @@ body.modal-open { overflow: hidden; }
 .cmp-view { display: grid; gap: 8px; margin-top: 10px; line-height: 1.55; overflow-wrap: anywhere; }
 .cmp-view p { margin: 0; padding: 8px 12px; border-radius: 8px; }
 .cmp-same { color: var(--muted); }
-.cmp-change { background: var(--surface); border: 1px solid var(--border); position: relative; padding-left: 40px !important; }
-.cmp-change::before { content: attr(data-n); position: absolute; left: 10px; top: 8px; font: 600 11px var(--mono); color: var(--muted); }
+.cmp-change { background: var(--surface); border: 1px solid var(--border); position: relative; padding-inline-start: 40px !important; }
+.cmp-change::before { content: attr(data-n); position: absolute; inset-inline-start: 10px; top: 8px; font: 600 11px var(--mono); color: var(--muted); }
 .cmp-skip { text-align: center; color: var(--muted); font-size: 12px; border-top: 1px dashed var(--border); border-bottom: 1px dashed var(--border); border-radius: 0 !important; }
 .source-chip.wide { max-width: 100%; }
 
 /* ---- language switch */
-.top .lang { font: 600 12px var(--mono); padding: 6px 9px; letter-spacing: .04em; margin-left: 8px; }
+.top .lang { font: 600 12px var(--mono); padding: 6px 9px; letter-spacing: .04em; margin-inline-start: 8px; flex: none; }
 
 /* ---- install & offline */
 .status.offline { background: var(--accent-wash); color: var(--accent); }
 .top .install { padding: 6px 11px; font-size: 13px; }
 .security-link { color: var(--muted); text-decoration: underline; justify-self: start; }
+
+/* Right-to-left text (Arabic) in answers, sources and documents */
+.msg .text, .source-detail, .msg.user { unicode-bidi: plaintext; }
+
+/* ---- quick tasks */
+.tasks { display: flex; gap: 8px; overflow-x: auto; padding: 10px max(20px, calc((100% - 760px) / 2)) 0; scrollbar-width: none; }
+.tasks::-webkit-scrollbar { display: none; }
+.task-chip { flex: none; font-size: 13px; padding: 6px 12px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; white-space: nowrap; }
+.task-chip:hover { border-color: var(--accent); color: var(--accent); }
+.msg .text h3, .msg .text h4, .msg .text h5, .msg .text h6 { margin: 14px 0 6px; font-size: 15px; }
+.msg .text ul, .msg .text ol { margin: 6px 0 10px; padding-inline-start: 22px; }
+.msg .text li { margin: 3px 0; }
+.msg .text .katex-display { margin: 10px 0; overflow-x: auto; overflow-y: hidden; }
+.msg .text math[display="block"] { margin: 10px 0; }
+.msg .text .katex { font-size: 1.08em; }
+
+/* ---- language picker */
+select.lang { width: auto; font: 600 12.5px var(--sans); padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+
+/* Arabic: the side panel slides in from the right */
+@media (max-width: 860px) { [dir="rtl"] .side:not(.open) { transform: translateX(100%); } }
+
+/* Arabic letters join up; letter-spacing would pull them apart. */
+[lang="ar"] * { letter-spacing: 0 !important; }

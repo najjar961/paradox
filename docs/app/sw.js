@@ -5,12 +5,12 @@
 // your documents or chats: those are never requested over the network at all.
 // It ignores every request to other sites (the AI models cache themselves).
 
-const SHELL_CACHE = "paradox-shell-v1";   // changes with every release (network first)
-const VENDOR_CACHE = "paradox-vendor-v1"; // bump only when a file in vendor/ changes
+const SHELL_CACHE = "paradox-shell-v2";   // changes with every release (network first)
+const VENDOR_CACHE = "paradox-vendor-v2"; // bump only when a file in vendor/ changes
 
 const SHELL = [
   "./", "index.html", "app.js", "app.css", "i18n.js", "layout.js", "office.js", "compare.js",
-  "worker.js", "embed-worker.js", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png",
+  "worker.js", "embed-worker.js", "markdown.js", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png",
 ];
 
 // Everything else the app can load. Cached when first used, or all at once ("warm")
@@ -28,6 +28,28 @@ const VENDOR = [
   "vendor/fonts/LiberationSerif-Regular.ttf",
   "vendor/jspdf.umd.min.js",
   "vendor/jszip.min.js",
+  "vendor/katex/fonts/KaTeX_AMS-Regular.woff2",
+  "vendor/katex/fonts/KaTeX_Caligraphic-Bold.woff2",
+  "vendor/katex/fonts/KaTeX_Caligraphic-Regular.woff2",
+  "vendor/katex/fonts/KaTeX_Fraktur-Bold.woff2",
+  "vendor/katex/fonts/KaTeX_Fraktur-Regular.woff2",
+  "vendor/katex/fonts/KaTeX_Main-Bold.woff2",
+  "vendor/katex/fonts/KaTeX_Main-BoldItalic.woff2",
+  "vendor/katex/fonts/KaTeX_Main-Italic.woff2",
+  "vendor/katex/fonts/KaTeX_Main-Regular.woff2",
+  "vendor/katex/fonts/KaTeX_Math-BoldItalic.woff2",
+  "vendor/katex/fonts/KaTeX_Math-Italic.woff2",
+  "vendor/katex/fonts/KaTeX_SansSerif-Bold.woff2",
+  "vendor/katex/fonts/KaTeX_SansSerif-Italic.woff2",
+  "vendor/katex/fonts/KaTeX_SansSerif-Regular.woff2",
+  "vendor/katex/fonts/KaTeX_Script-Regular.woff2",
+  "vendor/katex/fonts/KaTeX_Size1-Regular.woff2",
+  "vendor/katex/fonts/KaTeX_Size2-Regular.woff2",
+  "vendor/katex/fonts/KaTeX_Size3-Regular.woff2",
+  "vendor/katex/fonts/KaTeX_Size4-Regular.woff2",
+  "vendor/katex/fonts/KaTeX_Typewriter-Regular.woff2",
+  "vendor/katex/katex.min.css",
+  "vendor/katex/katex.min.js",
   "vendor/mammoth.browser.min.js",
   "vendor/mupdf/mupdf-wasm.js",
   "vendor/mupdf/mupdf-wasm.wasm",
@@ -37,8 +59,10 @@ const VENDOR = [
   "vendor/tesseract/core/tesseract-core-lstm.wasm.js",
   "vendor/tesseract/core/tesseract-core-relaxedsimd-lstm.wasm.js",
   "vendor/tesseract/core/tesseract-core-simd-lstm.wasm.js",
+  "vendor/tesseract/lang/ara.traineddata.gz",
   "vendor/tesseract/lang/deu.traineddata.gz",
   "vendor/tesseract/lang/eng.traineddata.gz",
+  "vendor/tesseract/lang/fra.traineddata.gz",
   "vendor/tesseract/tesseract.min.js",
   "vendor/tesseract/worker.min.js",
   "vendor/transformers/ort-wasm-simd-threaded.asyncify.mjs",

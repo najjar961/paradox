@@ -8,18 +8,27 @@ ROOT = Path(__file__).resolve().parent.parent
 I18N = ROOT / "docs" / "app" / "i18n.js"
 
 
-def german_keys() -> dict:
+def dictionary(name: str = "DE") -> dict:
     src = I18N.read_text()
-    body = src[src.index("const DE = {") + len("const DE = "):src.index("\n  };") + 4]
-    # The dictionary is plain JSON apart from comments, trailing commas and line-wrapped values.
+    start = src.index(f"const {name} = {{") + len(f"const {name} = ")
+    body = src[start:src.index("\n  };", start) + 4]
+    # The dictionary is plain JSON apart from comments and trailing commas.
     body = re.sub(r"^\s*//.*$", "", body, flags=re.M)
     body = re.sub(r",(\s*})", r"\1", body)
+
     def no_duplicates(pairs):
         keys = [k for k, _ in pairs]
         dupes = {k for k in keys if keys.count(k) > 1}
         assert not dupes, f"duplicate keys: {dupes}"
         return dict(pairs)
     return json.loads(body, object_pairs_hook=no_duplicates)
+
+
+def german_keys() -> dict:
+    return dictionary("DE")
+
+
+LANGS = ["DE", "FR", "AR"]
 
 
 def squash(s: str) -> str:
@@ -31,6 +40,8 @@ def ui_keys() -> set:
     for js in ["docs/app/app.js", "app/static/app.js"]:
         src = (ROOT / js).read_text()
         keys |= {json.loads(f'"{k}"') for k in re.findall(r'\b(?:tr|toast|loadLabel|openModal|showLogin|setStatus|new Error)\("((?:[^"\\]|\\.)*)"', src)}
+        tasks = src[src.index("const TASKS = ["):src.index("];", src.index("const TASKS = ["))]
+        keys |= {json.loads(f'"{k}"') for k in re.findall(r'"((?:[^"\\]|\\.)*)"', tasks)}
     for page in ["docs/app/index.html", "app/static/index.html", "docs/index.html"]:
         src = (ROOT / page).read_text()
         for tag, kind, inner in re.findall(r"<(\w+)[^>]*?\sdata-i18n(-html)?(?=[\s>])[^>]*>(.*?)</\1>", src, re.S):
@@ -51,15 +62,23 @@ def test_both_apps_share_one_dictionary():
     assert (ROOT / "app/static/i18n.js").read_bytes() == I18N.read_bytes()
 
 
-def test_every_interface_text_has_german():
-    de = german_keys()
+def test_every_interface_text_is_translated():
     internal = {"no adapter", "unauthorised"}  # error codes that are never shown
-    missing = sorted(k for k in ui_keys() - internal if k not in de)
-    assert not missing, "No German for:\n" + "\n".join(missing)
+    for lang in LANGS:
+        d = dictionary(lang)
+        missing = sorted(k for k in ui_keys() - internal if k not in d)
+        assert not missing, f"No {lang} for:\n" + "\n".join(missing)
+
+
+def test_all_languages_have_the_same_keys():
+    de = set(dictionary("DE"))
+    for lang in LANGS[1:]:
+        assert set(dictionary(lang)) == de, lang
 
 
 def test_placeholders_and_plurals_match():
-    for en, de in german_keys().items():
-        assert sorted(re.findall(r"\{\w+\}", en)) == sorted(re.findall(r"\{\w+\}", de)), en
-        assert en.count("|") == de.count("|"), en
-        assert sorted(re.findall(r"</?\w+", en)) == sorted(re.findall(r"</?\w+", de)), en
+    for lang in LANGS:
+        for en, tr in dictionary(lang).items():
+            assert sorted(re.findall(r"\{\w+\}", en)) == sorted(re.findall(r"\{\w+\}", tr)), (lang, en)
+            assert en.count("|") == tr.count("|"), (lang, en)
+            assert sorted(re.findall(r"</?\w+", en)) == sorted(re.findall(r"</?\w+", tr)), (lang, en)

@@ -205,14 +205,14 @@ def to_html(result: dict, context: int = 1) -> str:
             out.append(f'<p class="cmp-skip">{hidden} unchanged paragraph{"s" if hidden > 1 else ""}</p>')
             hidden = 0
         if b["type"] == "same":
-            out.append(f'<p class="cmp-same">{html.escape(b["text"])}</p>')
+            out.append(f'<p class="cmp-same" dir="auto">{html.escape(b["text"])}</p>')
         else:
             cls = "cmp-add" if not b["old"] else "cmp-del" if not b["new"] else "cmp-chg"
             inner = "".join(
                 html.escape(p["t"]) if p["op"] == "=" else
                 f'<{"del" if p["op"] == "-" else "ins"}>{html.escape(p["t"])}</{"del" if p["op"] == "-" else "ins"}>'
                 for p in b["parts"])
-            out.append(f'<p class="cmp-change {cls}" data-n="{n}">{inner}</p>')
+            out.append(f'<p class="cmp-change {cls}" dir="auto" data-n="{n}">{inner}</p>')
     if hidden:
         out.append(f'<p class="cmp-skip">{hidden} unchanged paragraph{"s" if hidden > 1 else ""}</p>')
     return "\n".join(out)

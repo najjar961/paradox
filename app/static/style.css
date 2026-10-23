@@ -63,7 +63,7 @@ button:disabled { opacity: .5; cursor: default; }
 
 /* Layout */
 .app { display: grid; grid-template-columns: 260px 1fr; height: 100%; }
-.sidebar { display: flex; flex-direction: column; gap: 14px; padding: 18px 14px; background: var(--surface); border-right: 1px solid var(--border); min-height: 0; }
+.sidebar { display: flex; flex-direction: column; gap: 14px; padding: 18px 14px; background: var(--surface); border-inline-end: 1px solid var(--border); min-height: 0; }
 .side-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-top: 8px; }
 .ws-list { display: grid; gap: 2px; overflow-y: auto; align-content: start; flex: 1; }
 .ws-list button { text-align: left; padding: 8px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -137,7 +137,7 @@ hr.sep { border: 0; border-top: 1px dashed var(--border); margin: 12px 0; }
 
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
-  .sidebar { position: fixed; inset: 0 auto 0 0; width: 270px; z-index: 5; transform: translateX(-100%); transition: transform .2s; }
+  .sidebar { position: fixed; inset-block: 0; inset-inline-start: 0; width: 270px; z-index: 5; transform: translateX(-100%); transition: transform .2s; }
   .sidebar.open { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.25); }
   .only-mobile { display: inline-block; }
   .tag { display: none; }
@@ -246,8 +246,8 @@ body.modal-open { overflow: hidden; }
 .cmp-view { display: grid; gap: 8px; margin-top: 10px; line-height: 1.55; overflow-wrap: anywhere; }
 .cmp-view p { margin: 0; padding: 8px 12px; border-radius: 8px; }
 .cmp-same { color: var(--muted); }
-.cmp-change { background: var(--surface); border: 1px solid var(--border); position: relative; padding-left: 40px !important; }
-.cmp-change::before { content: attr(data-n); position: absolute; left: 10px; top: 8px; font: 600 11px var(--mono); color: var(--muted); }
+.cmp-change { background: var(--surface); border: 1px solid var(--border); position: relative; padding-inline-start: 40px !important; }
+.cmp-change::before { content: attr(data-n); position: absolute; inset-inline-start: 10px; top: 8px; font: 600 11px var(--mono); color: var(--muted); }
 .cmp-skip { text-align: center; color: var(--muted); font-size: 12px; border-top: 1px dashed var(--border); border-bottom: 1px dashed var(--border); border-radius: 0 !important; }
 .cmp-pick .ghost { padding: 7px 10px; white-space: nowrap; }
 .cmp-pick select { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
@@ -256,3 +256,27 @@ body.modal-open { overflow: hidden; }
 /* ---- language switch */
 .lang { font: 600 12px var(--mono); padding: 6px 9px; letter-spacing: .04em; }
 .lang-login { background: none; border: 0; color: var(--muted); font-size: 13px; text-decoration: underline; cursor: pointer; justify-self: center; padding: 4px; }
+
+/* Right-to-left text (Arabic) in answers, sources and documents */
+.msg .text, .source-detail, .msg.user { unicode-bidi: plaintext; }
+
+/* ---- quick tasks */
+.tasks { display: flex; gap: 8px; overflow-x: auto; padding: 10px max(20px, calc((100% - 760px) / 2)) 0; scrollbar-width: none; }
+.tasks::-webkit-scrollbar { display: none; }
+.task-chip { flex: none; font-size: 13px; padding: 6px 12px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; white-space: nowrap; }
+.task-chip:hover { border-color: var(--accent); color: var(--accent); }
+.msg .text h3, .msg .text h4, .msg .text h5, .msg .text h6 { margin: 14px 0 6px; font-size: 15px; }
+.msg .text ul, .msg .text ol { margin: 6px 0 10px; padding-inline-start: 22px; }
+.msg .text li { margin: 3px 0; }
+.msg .text .katex-display { margin: 10px 0; overflow-x: auto; overflow-y: hidden; }
+.msg .text math[display="block"] { margin: 10px 0; }
+.msg .text .katex { font-size: 1.08em; }
+
+/* ---- language picker */
+select.lang { width: auto; font: 600 12.5px var(--sans); padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+
+/* Arabic: the side panel slides in from the right */
+@media (max-width: 860px) { [dir="rtl"] .sidebar:not(.open) { transform: translateX(100%); } }
+
+/* Arabic letters join up; letter-spacing would pull them apart. */
+[lang="ar"] * { letter-spacing: 0 !important; }
