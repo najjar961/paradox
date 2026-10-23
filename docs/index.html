@@ -317,6 +317,7 @@ footer a { color: var(--ink-soft); }
           <a href="https://x.com/paradoxexe404" target="_blank" rel="noopener">Open on X</a>
         </div>
         <p data-i18n>Send a DM on X and tell me what kind of documents you work with.</p>
+        <p><a href="paradox-for-it-and-data-protection.pdf" data-i18n data-pdf>One-page summary for your IT department (PDF)</a></p>
       </div>
     </div>
   </section>
@@ -387,6 +388,7 @@ footer a { color: var(--ink-soft); }
     copy.textContent = t("Copy");
     showMeter();
     langBtn.textContent = de ? "EN" : "DE";
+    document.querySelectorAll("a[data-pdf]").forEach((a) => { a.href = de ? "paradox-fuer-it-und-datenschutz.pdf" : "paradox-for-it-and-data-protection.pdf"; });
     langBtn.setAttribute("aria-label", de ? "Language: English" : "Sprache: Deutsch");
     document.querySelectorAll('a[href^="app/"], a[href^="security.html"], a[data-href]').forEach((a) => {
       if (!a.dataset.href) a.dataset.href = a.getAttribute("href");

@@ -363,6 +363,7 @@
     "In memory: <b>{kb} KB</b> · on disk: <b>0</b>": "Im Speicher: <b>{kb} KB</b> · auf Festplatte: <b>0</b>",
     "Start again": "Neu starten",
     "0 bytes": "0 Bytes",
+    "One-page summary for your IT department (PDF)": "Einseitige Übersicht für Ihre IT-Abteilung (PDF)",
     "Selected": "Markiert",
   };
 

@@ -60,3 +60,5 @@ footer a { color: var(--ink-soft); }
   .hero { padding-block: 16px 36px; }
   section { padding-block: 40px; }
 }
+.pdf { margin: 18px 0 0; font-weight: 600; }
+.pdf a::before { content: "↓ "; }
