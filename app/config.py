@@ -26,11 +26,11 @@ class Settings:
 
     # Chat model: ollama | openai | anthropic | echo (echo = offline test stub)
     llm_provider: str = field(default_factory=lambda: os.environ.get("LLM_PROVIDER", "ollama").lower())
-    llm_model: str = field(default_factory=lambda: os.environ.get("LLM_MODEL", "llama3.2"))
+    llm_model: str = field(default_factory=lambda: os.environ.get("LLM_MODEL", "qwen3:8b"))
 
     # Embeddings: ollama | openai | hash (hash = offline keyword-hash fallback)
     embed_provider: str = field(default_factory=lambda: os.environ.get("EMBED_PROVIDER", "ollama").lower())
-    embed_model: str = field(default_factory=lambda: os.environ.get("EMBED_MODEL", "nomic-embed-text"))
+    embed_model: str = field(default_factory=lambda: os.environ.get("EMBED_MODEL", "bge-m3"))
 
     ollama_url: str = field(default_factory=lambda: os.environ.get("OLLAMA_URL", "http://localhost:11434").rstrip("/"))
     openai_url: str = field(default_factory=lambda: os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"))
@@ -50,6 +50,9 @@ class Settings:
     # so it can summarise and edit them; bigger collections use passage search.
     full_doc_chars: int = field(default_factory=lambda: _int("FULL_DOC_CHARS", 24000))
     ollama_num_ctx: int = field(default_factory=lambda: _int("OLLAMA_NUM_CTX", 12288))
+    # Reasoning ("thinking") models: "false" answers straight away, "true" lets them think first.
+    # Empty = automatic: off for known thinking models (qwen3, deepseek-r1), unchanged for others.
+    ollama_think: str = field(default_factory=lambda: os.environ.get("OLLAMA_THINK", "").strip().lower())
     top_k: int = field(default_factory=lambda: _int("TOP_K", 5))
     history_turns: int = field(default_factory=lambda: _int("HISTORY_TURNS", 6))
 

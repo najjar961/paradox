@@ -111,11 +111,13 @@ cp .env.example .env
 cp users.example.yaml users.yaml
 python scripts/hash_password.py alice     # paste the printed line into users.yaml
 docker compose up -d --build
-docker compose exec ollama ollama pull llama3.2
-docker compose exec ollama ollama pull nomic-embed-text
+docker compose exec ollama ollama pull qwen3:8b
+docker compose exec ollama ollama pull bge-m3
 ```
 
 Open http://localhost:8000. For plain-http local testing set `COOKIE_SECURE=false` in `.env`, otherwise the browser will not keep the session cookie. For anything beyond localhost, put a TLS reverse proxy (Caddy, Traefik, nginx) in front and keep `COOKIE_SECURE=true`.
+
+The Ollama service uses an NVIDIA graphics card if there is one (see `docker-compose.yml`; delete the `deploy:` block if you have none). `qwen3:8b` needs about 6 GB of graphics memory; on weaker machines use `qwen3:4b`, on 12 GB+ cards `gemma4:12b` is worth trying. Set the model in `.env` (`LLM_MODEL`).
 
 The example users file contains a `demo` account with password `change-me-please`. Delete it before exposing the app.
 

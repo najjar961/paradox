@@ -94,6 +94,43 @@ def _hash_embed(texts: list[str], dim: int = 512) -> np.ndarray:
 
 # ---------------------------------------------------------------- chat
 
+THINKING_MODELS = ("qwen3", "deepseek-r1", "qwq")
+
+
+class ThinkFilter:
+    """Drops <think>...</think> reasoning that some models put into the answer text,
+    also when the tags arrive split across stream pieces."""
+
+    def __init__(self):
+        self.buf = ""
+        self.inside = False
+        self.trim = False  # drop the blank lines a thinking block leaves behind
+
+    def feed(self, piece: str) -> str:
+        self.buf += piece
+        out = []
+        while self.buf:
+            tag = "</think>" if self.inside else "<think>"
+            i = self.buf.find(tag)
+            if i >= 0:
+                if not self.inside:
+                    out.append(self.buf[:i])
+                self.buf = self.buf[i + len(tag):]
+                self.inside = not self.inside
+                self.trim = self.trim or not self.inside
+                continue
+            # keep a possible partial tag at the end for the next piece
+            keep = next((k for k in range(len(tag) - 1, 0, -1) if self.buf.endswith(tag[:k])), 0)
+            if not self.inside:
+                out.append(self.buf[:len(self.buf) - keep])
+            self.buf = self.buf[len(self.buf) - keep:] if keep else ""
+            break
+        text = "".join(out)
+        if self.trim and text:
+            text = text.lstrip()
+            self.trim = not text
+        return text
+
 class ChatModel:
     def __init__(self, settings: Settings, client: httpx.AsyncClient):
         self.s = settings
@@ -128,15 +165,28 @@ class ChatModel:
         except httpx.HTTPError as exc:
             raise ProviderError(f"Model service unreachable ({type(exc).__name__}).") from exc
 
+    def _think(self) -> bool | None:
+        v = self.s.ollama_think
+        if v in ("false", "off", "0", "no"):
+            return False
+        if v in ("true", "on", "1", "yes"):
+            return True
+        name = self.s.llm_model.lower()
+        return False if name.startswith(THINKING_MODELS) else None
+
     async def _ollama(self, system, messages):
         body = {"model": self.s.llm_model, "stream": True,
                 "options": {"num_ctx": self.s.ollama_num_ctx},
                 "messages": [{"role": "system", "content": system}, *messages]}
+        think = self._think()
+        if think is not None:
+            body["think"] = think
+        hide = ThinkFilter()
         async for line in self._lines(f"{self.s.ollama_url}/api/chat", body):
             data = json.loads(line)
             if data.get("error"):
                 raise ProviderError("Model error: " + str(data["error"])[:200])
-            piece = (data.get("message") or {}).get("content")
+            piece = hide.feed((data.get("message") or {}).get("content") or "")
             if piece:
                 yield piece
 

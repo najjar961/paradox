@@ -689,3 +689,33 @@ def test_compare_endpoint_and_chat(app):
     # Another user can't compare alice's documents.
     bob = login(app, "bob")
     assert bob.post(f"/api/workspaces/{ws}/compare", json={"old_id": a, "new_id": b}).status_code == 404
+
+
+# ---------------------------------------------------------------- local models
+
+def test_thinking_is_hidden_and_switched_off_for_qwen3():
+    import asyncio
+    from app.providers import ChatModel, ThinkFilter
+    f = ThinkFilter()
+    text = "<think>reasoning here</think>\n\nDie Miete steigt um 150 €."
+    assert "".join(f.feed(c) for c in text) == "Die Miete steigt um 150 €."
+    assert ThinkFilter().feed("a <b> c") == "a <b> c"
+
+    sent = {}
+
+    class Fake(ChatModel):
+        async def _lines(self, url, body, headers=None):
+            sent.update(body)
+            for piece in ["<think>x", "</think>Hallo", " Welt"]:
+                yield json.dumps({"message": {"content": piece}})
+
+    async def run(model, think=""):
+        sent.clear()
+        m = Fake(replace(Settings(), llm_provider="ollama", llm_model=model, ollama_think=think), None)
+        return "".join([p async for p in m.stream("sys", [{"role": "user", "content": "hi"}])])
+
+    assert asyncio.run(run("qwen3:8b")) == "Hallo Welt" and sent["think"] is False
+    asyncio.run(run("gemma4:12b"))
+    assert "think" not in sent
+    asyncio.run(run("qwen3:8b", "true"))
+    assert sent["think"] is True

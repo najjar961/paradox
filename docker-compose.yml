@@ -24,6 +24,13 @@ services:
     volumes:
       - ollama-models:/root/.ollama
     restart: unless-stopped
+    # Use the NVIDIA graphics card (much faster). Needs Docker Desktop with WSL 2 on Windows,
+    # or the NVIDIA Container Toolkit on Linux. No NVIDIA card? Delete these five lines.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
 
 volumes:
   ollama-models:
