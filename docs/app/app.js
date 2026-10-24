@@ -1672,6 +1672,26 @@ function renderTasks() {
   }));
 }
 
+// ------------------------------------------------------------------ sample notes
+// "Try sample lecture notes": a short statistics lecture in the interface language, so new
+// visitors can try learn mode without a file of their own. It is a file of this app, loaded like any other.
+const SAMPLE_NAMES = { en: "sample-statistics-lecture.md", de: "beispiel-statistik-vorlesung.md", fr: "exemple-cours-statistiques.md", ar: "مثال-محاضرة-الإحصاء.md" };
+
+async function addSample() {
+  const lang = SAMPLE_NAMES[window.i18n.lang] ? window.i18n.lang : "en";
+  try {
+    const text = await (await fetch(`samples/statistics-${lang}.md`)).text();
+    await addFiles([new File([text], SAMPLE_NAMES[lang], { type: "text/markdown" })]);
+  } catch (err) {
+    console.error(err);
+    toast("Loading failed. Check your connection, or try the Fast model.");
+    return;
+  }
+  if (state.engine && !state.busy) runQuiz("");
+  else toast("Sample notes added. When the model is ready, click Quiz me.");
+}
+document.querySelectorAll(".try-sample").forEach((b) => b.addEventListener("click", addSample));
+
 // ------------------------------------------------------------------ learn mode
 // "Quiz me" turns the user's notes (or a topic typed in the box) into practice questions with
 // answers to uncover. Questions and answers live in this page only, like everything else.
@@ -1814,6 +1834,116 @@ function renderQuiz(reply, textEl, cards, topic, avoid) {
   textEl.replaceChildren(el("p", { className: "quiz-title" }, el("strong", { textContent: tr("Practice questions") })), list, score, el("div", { className: "quiz-more" }, more, missed));
   updateScore();
 }
+
+// ------------------------------------------------------------------ live privacy check
+// Counts every request this app makes and how many bytes of data each one sends. The page's
+// own requests come from the browser's Resource Timing list; the bodies of anything it sends
+// are measured where it is sent (fetch, XMLHttpRequest, sendBeacon); requests from the
+// background workers are reported by the offline helper (sw.js). Nothing here is stored.
+
+const traffic = { hosts: new Map(), requests: 0, uploads: 0, sent: 0, unknown: 0 };
+
+function bodySize(body) {
+  if (body == null) return 0;
+  if (typeof body === "string") return new TextEncoder().encode(body).length;
+  if (body instanceof Blob) return body.size;
+  if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) return body.byteLength;
+  if (body instanceof URLSearchParams) return new TextEncoder().encode(body.toString()).length;
+  if (body instanceof FormData) {
+    let n = 0;
+    for (const [k, v] of body) n += k.length + (typeof v === "string" ? new TextEncoder().encode(v).length : v.size);
+    return n;
+  }
+  return -1; // a stream: size unknown
+}
+
+function countSent(bytes) {
+  traffic.uploads++;
+  if (bytes < 0) traffic.unknown++; else traffic.sent += bytes;
+  renderMeter();
+}
+
+function countRequest(host) {
+  traffic.requests++;
+  traffic.hosts.set(host, (traffic.hosts.get(host) || 0) + 1);
+  renderMeter();
+}
+
+(function watchTraffic() {
+  const origFetch = window.fetch;
+  window.fetch = function (input, init) {
+    const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
+    if (method !== "GET" && method !== "HEAD") countSent(bodySize(init?.body ?? null));
+    return origFetch.apply(this, arguments);
+  };
+  const origSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function (body) {
+    if (body != null) countSent(bodySize(body));
+    return origSend.apply(this, arguments);
+  };
+  if (navigator.sendBeacon) {
+    const origBeacon = navigator.sendBeacon.bind(navigator);
+    navigator.sendBeacon = (url, data) => { countSent(bodySize(data ?? null)); return origBeacon(url, data); };
+  }
+  const seen = (e) => { try { countRequest(new URL(e.name).host); } catch { /* not a URL */ } };
+  try {
+    new PerformanceObserver((list) => list.getEntries().forEach(seen)).observe({ type: "resource", buffered: true });
+  } catch { performance.getEntriesByType("resource").forEach(seen); }
+  performance.getEntriesByType("navigation").forEach(seen);
+  navigator.serviceWorker?.addEventListener("message", (e) => {
+    if (e.data?.type !== "paradox-request") return;
+    countRequest(e.data.host);
+    if (e.data.method !== "GET" && e.data.method !== "HEAD") countSent(e.data.sent);
+  });
+})();
+
+const HOST_ROLES = {
+  [location.host]: "This app's own files",
+  "huggingface.co": "Public AI model files",
+  "cdn-lfs.huggingface.co": "Public AI model files",
+  "cdn-lfs-us-1.hf.co": "Public AI model files",
+  "cas-bridge.xethub.hf.co": "Public AI model files",
+  "raw.githubusercontent.com": "AI model program (WebLLM)",
+};
+const hostRole = (h) => HOST_ROLES[h] || (/(^|\.)(huggingface\.co|hf\.co)$/.test(h) ? "Public AI model files" : "Other");
+
+function formatBytes(n) {
+  if (n < 1024) return tr("{n} byte|{n} bytes", { n });
+  return n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+}
+
+let meterQueued = false;
+function renderMeter() {
+  if (meterQueued) return;
+  meterQueued = true;
+  requestAnimationFrame(() => {
+    meterQueued = false;
+    const sent = $("#meter-sent");
+    if (!sent) return;
+    const clean = traffic.sent === 0 && traffic.unknown === 0;
+    sent.textContent = traffic.unknown ? tr("unknown") : formatBytes(traffic.sent);
+    $("#meter").classList.toggle("alert", !clean);
+    const badge = $("#meter-badge");
+    badge.textContent = tr("Sent: {size}", { size: sent.textContent });
+    badge.classList.toggle("alert", !clean);
+    const sites = [...traffic.hosts.keys()].map((h) => (h === location.host ? tr("this app") : h));
+    $("#meter-hosts").textContent = tr("{n} download, from: {sites}|{n} downloads, from: {sites}", { n: traffic.requests, sites: sites.join(", ") });
+  });
+}
+
+$("#meter-badge").addEventListener("click", () => $("#meter-details").click());
+$("#meter-details").addEventListener("click", () => {
+  const rows = [...traffic.hosts].sort((a, b) => b[1] - a[1]).map(([host, n]) =>
+    el("tr", {}, el("td", { textContent: host }), el("td", { textContent: tr(hostRole(host)) }), el("td", { className: "num", textContent: String(n) })));
+  openModal("Every connection since you opened Paradox", [
+    el("p", { className: "meter-big", textContent: tr("Data sent from this device: {size}", { size: traffic.unknown ? tr("unknown") : formatBytes(traffic.sent) }) }),
+    el("p", { className: "small muted", textContent: tr("Requests that send data: {n}", { n: traffic.uploads }) }),
+    el("table", { className: "meter-table" },
+      el("thead", {}, el("tr", {}, el("th", { textContent: tr("Site") }), el("th", { textContent: tr("What it is") }), el("th", { className: "num", textContent: tr("Downloads") }))),
+      el("tbody", {}, ...rows)),
+    el("p", { className: "small muted", textContent: tr("Counted live by this app: the browser's list of everything the page loads, plus the offline helper, which sees the requests of the AI and search workers. Press F12 and open the Network tab to see the same list from your browser.") }),
+  ]);
+});
 
 // ------------------------------------------------------------------ install & offline
 

@@ -48,6 +48,7 @@
           <span data-i18n-html>Drop files or <u>browse</u></span>
           <small class="muted" data-i18n>PDF, Word, Excel, PowerPoint, scans · read on this device</small>
         </label>
+        <button type="button" class="link small try-sample" data-i18n>No file at hand? Try sample lecture notes</button>
         <ul id="doc-list" class="docs"></ul>
         <label class="switch meaning-row"><input type="checkbox" id="meaning" checked> <span data-i18n>Meaning-based search</span></label>
         <p id="meaning-note" class="small muted meaning-note"></p>
@@ -56,6 +57,12 @@
       <section class="card private">
         <strong data-i18n>Nothing leaves this page.</strong>
         <span data-i18n>Files are read and answered on your device. Close the tab and everything is gone. The only downloads are the public AI models.</span>
+        <div id="meter" class="meter" role="status" aria-live="off">
+          <span class="small" data-i18n>Live check: data sent from this device</span>
+          <strong id="meter-sent" class="meter-sent">0 bytes</strong>
+          <span id="meter-hosts" class="small muted"></span>
+          <button id="meter-details" class="link small" type="button" data-i18n>See every connection</button>
+        </div>
         <button id="wipe" class="ghost" type="button" data-i18n>Wipe documents &amp; chat</button>
         <a class="small security-link" href="../security.html" data-i18n>How to check it yourself</a>
       </section>
@@ -66,6 +73,7 @@
         <button id="menu" class="icon only-narrow" type="button" aria-label="Show documents and model" data-i18n-attr="aria-label">☰</button>
         <h1 data-i18n>Your private workspace</h1>
         <span id="offline" class="status offline" hidden data-i18n>Works offline</span>
+        <button id="meter-badge" class="status meter-badge" type="button" title="See every connection" data-i18n-attr="title">↑ 0 B</button>
         <span id="status" class="status off" data-en="No model loaded">No model loaded</span>
         <button id="install" class="ghost install" type="button" hidden data-i18n>Install app</button>
         <select id="lang" class="lang" aria-label="Language" data-i18n-attr="aria-label"></select>
@@ -77,6 +85,7 @@
           <ol>
             <li data-i18n-html>Pick a model and click <b>Download &amp; start</b>. The first time takes a few minutes.</li>
             <li data-i18n-html>Drop in your homework, a contract or a report, or just ask without a file.</li>
+            <li><button type="button" class="link try-sample" data-i18n>No file at hand? Try sample lecture notes</button></li>
             <li data-i18n-html>Use the buttons above the box: <i>Quiz me</i> turns your notes into practice questions; <i>Explain step by step</i>, <i>Check my solution</i> and <i>Translate</i> help with any task.</li>
             <li data-i18n-html>Edit files in their original layout, compare two versions, or black out personal data.</li>
           </ol>

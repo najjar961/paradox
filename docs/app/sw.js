@@ -3,14 +3,17 @@
 // What it stores: only this app's own files (HTML, scripts, fonts, libraries), in the
 // browser's Cache Storage, so the page opens without internet. It never sees or stores
 // your documents or chats: those are never requested over the network at all.
-// It ignores every request to other sites (the AI models cache themselves).
+// It does not handle requests to other sites (the AI models cache themselves), but it counts
+// the requests the app's background workers make, for the live privacy check in the sidebar:
+// which site, and how many bytes each request sends. It reports that to the open Paradox pages only.
 
-const SHELL_CACHE = "paradox-shell-v2";   // changes with every release (network first)
+const SHELL_CACHE = "paradox-shell-v3";   // changes with every release (network first)
 const VENDOR_CACHE = "paradox-vendor-v2"; // bump only when a file in vendor/ changes
 
 const SHELL = [
   "./", "index.html", "app.js", "app.css", "i18n.js", "layout.js", "office.js", "compare.js",
   "worker.js", "embed-worker.js", "markdown.js", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png",
+  "samples/statistics-en.md", "samples/statistics-de.md", "samples/statistics-fr.md", "samples/statistics-ar.md",
 ];
 
 // Everything else the app can load. Cached when first used, or all at once ("warm")
@@ -84,7 +87,25 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
+// Live privacy check. The page counts its own requests itself (Resource Timing); requests from
+// workers (AI model, search model, text recognition) are only visible here, so they are reported.
+function reportWorkerRequest(event) {
+  if (!event.clientId) return;
+  event.waitUntil((async () => {
+    const client = await self.clients.get(event.clientId);
+    if (!client || client.type === "window") return;
+    const req = event.request;
+    let sent = 0;
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      try { sent = (await req.clone().arrayBuffer()).byteLength; } catch { sent = -1; }
+    }
+    const report = { type: "paradox-request", host: new URL(req.url).host, method: req.method, sent };
+    for (const page of await self.clients.matchAll({ type: "window" })) page.postMessage(report);
+  })());
+}
+
 self.addEventListener("fetch", (event) => {
+  reportWorkerRequest(event);
   const req = event.request;
   const url = new URL(req.url);
   if (req.method !== "GET" || url.origin !== self.location.origin) return;

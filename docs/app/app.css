@@ -289,3 +289,21 @@ select.lang { width: auto; font: 600 12.5px var(--sans); padding: 6px 8px; borde
 .speed-hint p { margin: 0 0 8px; font-size: 14px; }
 .speed-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .speed-actions button { padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+
+/* Live privacy check */
+.meter { display: grid; gap: 2px; margin: 6px 0 2px; padding: 8px 10px; border-radius: 9px; background: var(--accent-wash); color: var(--text); }
+.meter-sent { font: 600 20px/1.2 var(--mono); color: var(--accent); }
+.meter.alert { background: color-mix(in srgb, var(--danger) 15%, transparent); }
+.meter.alert .meter-sent { color: var(--danger); }
+.meter .link { justify-self: start; }
+.meter-big { font-weight: 600; font-size: 16px; margin: 0 0 4px; }
+.meter-table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 10px 0; }
+.meter-table th, .meter-table td { text-align: start; padding: 6px 8px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.meter-table .num { text-align: end; font-family: var(--mono); }
+.try-sample { color: var(--accent); justify-self: start; text-align: start; margin: 6px 0 0; }
+.meter-badge { cursor: pointer; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-wash); flex: none; }
+.meter-badge.alert { color: var(--danger); border-color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+/* Phones: the privacy badge stays in the top bar; the model status is in the sidebar card anyway. */
+@media (max-width: 600px) { .top #status { display: none; } }
+/* Arabic letters join up; a monospaced font pulls them apart. */
+[lang="ar"] .status { font-family: var(--sans); }

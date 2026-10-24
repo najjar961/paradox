@@ -327,3 +327,44 @@ def test_slow_answers_suggest_a_smaller_model_once(browser, site):
     pg.locator("#model-ready", has_text="4B").wait_for()
     assert pg.input_value("#model-select") == "balanced"
     assert not pg.errors, pg.errors
+
+
+def test_privacy_meter_shows_zero_bytes_and_every_site(browser, site, files):
+    pg = page_for(browser)
+    pg.goto(f"{site}/app/#selftest")
+    pg.set_input_files("#file-input", files)
+    pg.locator("#doc-list .doc-tools").nth(1).wait_for()
+    assert pg.inner_text("#meter-sent") == "0 bytes"
+    assert "this app" in pg.inner_text("#meter-hosts")
+    pg.click("#meter-details")
+    assert "This app's own files" in pg.inner_text("#modal-body")
+    assert not pg.errors, pg.errors
+
+
+def test_privacy_meter_catches_data_sent_from_page_and_workers(browser, site):
+    pg = page_for(browser)
+    pg.goto(f"{site}/app/#selftest")
+    pg.evaluate("navigator.serviceWorker.ready.then(() => true)")
+    pg.reload()
+    pg.wait_for_function("() => !!navigator.serviceWorker.controller")
+    # From the page itself: 6 bytes.
+    pg.evaluate("fetch('index.html', { method: 'POST', body: 'secret' }).catch(() => {})")
+    pg.locator("#meter-sent", has_text="6 bytes").wait_for()
+    # From a background worker: 4 more bytes, seen by the offline helper.
+    pg.evaluate("""new Worker(URL.createObjectURL(new Blob(
+        ["fetch('" + new URL('index.html', location.href) + "', { method: 'POST', body: 'data' }).catch(() => {})"],
+        { type: 'text/javascript' })))""")
+    pg.locator("#meter-sent", has_text="10 bytes").wait_for()
+    assert "alert" in pg.get_attribute("#meter", "class")
+
+
+def test_sample_notes_start_a_quiz(browser, site):
+    pg = page_for(browser, locale="de-DE")
+    pg.goto(f"{site}/app/#selftest")
+    pg.click("#load-model")
+    pg.locator("#model-ready").wait_for()
+    pg.locator("#empty .try-sample").click()
+    pg.locator("#doc-list .name", has_text="beispiel-statistik-vorlesung.md").wait_for()
+    pg.locator(".quiz-card").first.wait_for()
+    assert "Vorlesung 3" in pg.inner_text(".quiz-card")
+    assert not pg.errors, pg.errors

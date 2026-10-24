@@ -24,6 +24,8 @@ Paradox is a self-hosted, multi-user AI assistant for confidential documents and
 - Several workspaces per user, each with its own documents, chat and custom instructions
 - Upload PDF, Word, Excel, PowerPoint, scans and photos, TXT, Markdown, CSV, JSON, HTML and log files
 - **Work on tasks, not just documents:** upload homework or an assignment and use the task buttons above the box: *Explain step by step*, *Check my solution*, *Give me a hint*, *Summarise*, *Write a draft*, *Translate*. By default Paradox tutors (explains the method, checks your work, gives hints) and gives the full solution when you ask for it
+- **Live privacy check (Paradox Lite):** a badge in the top bar shows how many bytes of data have left the device (0), and a list of every site the app has contacted and why. The page counts its own requests; the offline helper counts those of the AI and search workers. A browser test sends data on purpose to prove the meter catches it
+- **Try it without a file:** one click loads a short sample statistics lecture in the interface language and starts a quiz
 - **Learn mode (Paradox Lite):** click *Quiz me* and your notes or lecture script become practice questions; uncover each answer, mark what you knew, then get new questions or practise the ones you missed. Type a topic in the box to quiz on just that, or on any topic without notes
 - **Maths:** formulas in answers are rendered properly (KaTeX, as MathML, so the strict content security policy stays)
 - Ask anything about a document, or ask Paradox to edit it ("rewrite this more formally", "fix the typos") and copy or download the result
