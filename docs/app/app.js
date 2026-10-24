@@ -288,11 +288,15 @@ async function createEngine(id) {
   try { cached = await webllm.hasModelInCache(id); } catch { /* treat as a download */ }
   const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
   const startedAt = performance.now();
+  let last = 0, intoGpu = cached; // after a download, progress starts again for loading into the graphics card
   const onProgress = (r) => {
     const f = Math.min(1, Math.max(0, r.progress || 0));
+    if (f < last - 0.05) intoGpu = true;
+    last = f;
     $("#progress-bar").style.width = `${Math.round(f * 100)}%`;
     $("#progress-text").textContent = f >= 1 ? tr("Starting the model…")
       : cached ? tr("Loading from this browser, no download… {p}%", { p: Math.round(f * 100) })
+      : intoGpu ? tr("Loading into the graphics card… {p}%", { p: Math.round(f * 100) })
       : progressText(f, startedAt);
   };
   try {
@@ -1922,17 +1926,17 @@ function renderMeter() {
     if (!sent) return;
     const clean = traffic.sent === 0 && traffic.unknown === 0;
     sent.textContent = traffic.unknown ? tr("unknown") : formatBytes(traffic.sent);
-    $("#meter").classList.toggle("alert", !clean);
+    $("#meter")?.classList.toggle("alert", !clean);
     const badge = $("#meter-badge");
-    badge.textContent = tr("Sent: {size}", { size: sent.textContent });
-    badge.classList.toggle("alert", !clean);
+    if (badge) badge.textContent = tr("Sent: {size}", { size: sent.textContent });
+    badge?.classList.toggle("alert", !clean);
     const sites = [...traffic.hosts.keys()].map((h) => (h === location.host ? tr("this app") : h));
-    $("#meter-hosts").textContent = tr("{n} download, from: {sites}|{n} downloads, from: {sites}", { n: traffic.requests, sites: sites.join(", ") });
+    if ($("#meter-hosts")) $("#meter-hosts").textContent = tr("{n} download, from: {sites}|{n} downloads, from: {sites}", { n: traffic.requests, sites: sites.join(", ") });
   });
 }
 
-$("#meter-badge").addEventListener("click", () => $("#meter-details").click());
-$("#meter-details").addEventListener("click", () => {
+$("#meter-badge")?.addEventListener("click", () => $("#meter-details")?.click());
+$("#meter-details")?.addEventListener("click", () => {
   const rows = [...traffic.hosts].sort((a, b) => b[1] - a[1]).map(([host, n]) =>
     el("tr", {}, el("td", { textContent: host }), el("td", { textContent: tr(hostRole(host)) }), el("td", { className: "num", textContent: String(n) })));
   openModal("Every connection since you opened Paradox", [

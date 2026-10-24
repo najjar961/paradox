@@ -404,6 +404,7 @@
     "No file at hand? Try sample lecture notes": "Keine Datei zur Hand? Beispiel-Vorlesung ausprobieren",
     "Sample notes added. When the model is ready, click Quiz me.": "Beispiel-Vorlesung hinzugefügt. Sobald das Modell bereit ist, klicken Sie auf Abfragen.",
     "Sent: {size}": "Gesendet: {size}",
+    "Loading into the graphics card… {p}%": "Wird in die Grafikkarte geladen … {p}%",
   };
 
   const FR = {
@@ -805,6 +806,7 @@
     "No file at hand? Try sample lecture notes": "Pas de fichier sous la main ? Essayez un exemple de cours",
     "Sample notes added. When the model is ready, click Quiz me.": "Exemple de cours ajouté. Quand le modèle est prêt, cliquez sur Interroge-moi.",
     "Sent: {size}": "Envoyé : {size}",
+    "Loading into the graphics card… {p}%": "Chargement dans la carte graphique… {p}%",
   };
 
   const AR = {
@@ -1206,6 +1208,7 @@
     "No file at hand? Try sample lecture notes": "ليس لديك ملف؟ جرّب محاضرة نموذجية",
     "Sample notes added. When the model is ready, click Quiz me.": "أُضيفت المحاضرة النموذجية. عندما يصبح النموذج جاهزاً، اضغط على اختبرني.",
     "Sent: {size}": "المُرسَل: {size}",
+    "Loading into the graphics card… {p}%": "جارٍ التحميل إلى بطاقة الرسوميات… {p}%",
   };
 
   const LANGS = { en: "English", de: "Deutsch", fr: "Français", ar: "العربية" };

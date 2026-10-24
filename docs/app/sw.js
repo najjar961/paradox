@@ -7,7 +7,7 @@
 // the requests the app's background workers make, for the live privacy check in the sidebar:
 // which site, and how many bytes each request sends. It reports that to the open Paradox pages only.
 
-const SHELL_CACHE = "paradox-shell-v3";   // changes with every release (network first)
+const SHELL_CACHE = "paradox-shell-v4";   // changes with every release (network first)
 const VENDOR_CACHE = "paradox-vendor-v2"; // bump only when a file in vendor/ changes
 
 const SHELL = [
@@ -130,7 +130,9 @@ async function cacheFirst(req) {
 async function networkFirst(req) {
   const cache = await caches.open(SHELL_CACHE);
   try {
-    const res = await fetch(req);
+    // "no-cache" asks GitHub whether the file changed instead of trusting the browser's
+    // 10-minute HTTP cache, so a new page never runs with an old app.js after an update.
+    const res = await fetch(new Request(req.url, { cache: "no-cache", credentials: "same-origin" }));
     if (res.ok) cache.put(req, res.clone());
     return res;
   } catch (err) {
