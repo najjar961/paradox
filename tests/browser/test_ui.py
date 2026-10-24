@@ -335,8 +335,8 @@ def test_privacy_meter_shows_zero_bytes_and_every_site(browser, site, files):
     pg.goto(f"{site}/app/#selftest")
     pg.set_input_files("#file-input", files)
     pg.locator("#doc-list .doc-tools").nth(1).wait_for()
+    pg.locator("#meter-hosts", has_text="this app").wait_for()  # the meter refreshes a moment later
     assert pg.inner_text("#meter-sent") == "0 bytes"
-    assert "this app" in pg.inner_text("#meter-hosts")
     pg.click("#meter-details")
     assert "This app's own files" in pg.inner_text("#modal-body")
     assert not pg.errors, pg.errors
