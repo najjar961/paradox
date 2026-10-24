@@ -24,10 +24,14 @@ const SELFTEST = location.hash === "#selftest"; // offline UI test with a fake m
 // ------------------------------------------------------------------ settings
 
 const MODELS = [
-  { key: "fast", base: "Qwen2.5-1.5B-Instruct", label: "Fast · Qwen2.5 1.5B", note: "About 1 GB download. Runs on most laptops. Good for questions, basic edits." },
-  { key: "balanced", base: "Llama-3.2-3B-Instruct", label: "Balanced · Llama 3.2 3B", note: "About 2 GB download. Better writing. Needs roughly 3 GB of graphics memory." },
-  { key: "best", base: "Qwen2.5-7B-Instruct", label: "Best · Qwen2.5 7B", note: "About 4.5 GB download. Best German and editing. Needs a strong graphics card (6 GB+)." },
+  { key: "fast", base: "Qwen3-1.7B", label: "Fast · Qwen3 1.7B", note: "About 1 GB download, the quickest start. Runs on most laptops. Good for questions, summaries and simple tasks." },
+  { key: "balanced", base: "Qwen3-4B", label: "Balanced · Qwen3 4B", note: "About 2.3 GB download. Much better at maths, homework and languages. Needs roughly 3.5 GB of graphics memory." },
+  { key: "best", base: "Qwen3-8B", label: "Best · Qwen3 8B", note: "About 4.6 GB download. Best answers in every language. Needs a strong graphics card (6 GB+)." },
 ];
+// Models earlier versions of Paradox Lite offered. If one is still cached, the user can remove it.
+const OLD_MODELS = ["Qwen2.5-1.5B-Instruct", "Llama-3.2-3B-Instruct", "Qwen2.5-7B-Instruct"];
+// Qwen3 can "think" at length before answering; in a browser that is too slow, so it is switched off.
+const NO_THINKING = { extra_body: { enable_thinking: false } };
 const CONTEXT_TOKENS = 8192;
 const FULL_DOC_CHARS = 14000; // send documents whole up to this size, otherwise search passages
 const CHUNK = 900, OVERLAP = 120, TOP_K = 4, HISTORY_TURNS = 4;
@@ -86,7 +90,7 @@ async function initModelCard() {
     o.textContent = tr(m.label);
     sel.append(o);
   }
-  sel.value = "balanced";
+  sel.value = "fast"; // the smallest download, so a first visit gets going quickly
   sel.addEventListener("change", updateModelNote);
 
   if (SELFTEST) { updateModelNote(); return; }
@@ -108,7 +112,52 @@ async function initModelCard() {
     setStatus("No usable graphics card", "off");
     return;
   }
+  // Returning visitors: pre-select the largest model already in this browser, so "Start" needs no download.
+  try {
+    const webllm = await loadWebllm();
+    for (const m of [...MODELS].reverse()) {
+      if (await webllm.hasModelInCache(modelIdFor(m))) { sel.value = m.key; break; }
+    }
+  } catch { /* cache check is optional */ }
   updateModelNote();
+  findOldModels();
+}
+
+function oldModelIds() {
+  return OLD_MODELS.flatMap((base) => [`${base}-q4f16_1-MLC`, `${base}-q4f32_1-MLC`]);
+}
+
+async function findOldModels() {
+  try {
+    const webllm = await loadWebllm();
+    for (const id of oldModelIds()) {
+      if (await webllm.hasModelInCache(id)) { $("#old-models").hidden = false; return; }
+    }
+  } catch { /* optional */ }
+}
+
+$("#remove-old").addEventListener("click", async () => {
+  try {
+    const webllm = await loadWebllm();
+    for (const id of oldModelIds()) {
+      if (await webllm.hasModelInCache(id)) await webllm.deleteModelAllInfoInCache(id);
+    }
+    $("#old-models").hidden = true;
+    toast("Removed.");
+  } catch (err) {
+    console.error(err);
+    toast("Could not remove the model. You can clear site data in your browser settings.");
+  }
+});
+
+// "42% · about 3 min left", computed from how fast the download has gone so far.
+function progressText(fraction, startedAt) {
+  const p = Math.round(fraction * 100);
+  const secs = (performance.now() - startedAt) / 1000;
+  if (fraction < 0.03 || fraction >= 1 || secs < 4) return `${p}%`;
+  const left = secs * (1 - fraction) / fraction;
+  const eta = left < 60 ? tr("less than a minute left") : tr("about {n} min left", { n: Math.ceil(left / 60) });
+  return `${p}% · ${eta}`;
 }
 
 async function updateModelNote() {
@@ -170,9 +219,11 @@ $("#load-model").addEventListener("click", async () => {
 async function createEngine(id) {
   const webllm = await loadWebllm();
   const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
+  const startedAt = performance.now();
   const onProgress = (r) => {
-    $("#progress-bar").style.width = `${Math.round((r.progress || 0) * 100)}%`;
-    $("#progress-text").textContent = r.text || "";
+    const f = Math.min(1, Math.max(0, r.progress || 0));
+    $("#progress-bar").style.width = `${Math.round(f * 100)}%`;
+    $("#progress-text").textContent = f >= 1 ? tr("Starting the model…") : progressText(f, startedAt);
   };
   try {
     return await webllm.CreateWebWorkerMLCEngine(worker, id, { initProgressCallback: onProgress },
@@ -1033,9 +1084,14 @@ async function htmlPreview(kind, before, after, highlight) {
   return { after: await wrap(after, highlight), before: await wrap(before, []) };
 }
 
+// Removes a <think>…</think> block (or one still being written) in case a model emits one anyway.
+function stripThinking(text) {
+  return text.replace(/<think>[\s\S]*?(<\/think>\s*|$)/g, "").replace(/^\s+/, "");
+}
+
 async function askModel(messages, maxTokens = 600) {
-  const r = await state.engine.chat.completions.create({ messages, stream: false, temperature: 0, max_tokens: maxTokens });
-  return r.choices?.[0]?.message?.content || "";
+  const r = await state.engine.chat.completions.create({ messages, stream: false, temperature: 0, max_tokens: maxTokens, ...NO_THINKING });
+  return stripThinking(r.choices?.[0]?.message?.content || "");
 }
 
 // Make sure every FIND really exists; ask the model once to fix the ones that don't.
@@ -1392,13 +1448,13 @@ async function send(question, pair = null) {
   let failed = false;
   try {
     const stream = await state.engine.chat.completions.create({
-      messages, stream: true, temperature: 0.3, max_tokens: 1500,
+      messages, stream: true, temperature: 0.3, max_tokens: 1500, ...NO_THINKING,
     });
     for await (const chunk of stream) {
       const piece = chunk.choices?.[0]?.delta?.content;
       if (!piece) continue;
       answer += piece;
-      textEl.innerHTML = renderMarkdown(answer);
+      textEl.innerHTML = renderMarkdown(stripThinking(answer));
       if (box.scrollHeight - box.scrollTop - box.clientHeight < 120) box.scrollTop = box.scrollHeight;
     }
   } catch (err) {
@@ -1412,6 +1468,7 @@ async function send(question, pair = null) {
         : tr("Something went wrong: {msg}", { msg });
     }
   } finally {
+    answer = stripThinking(answer);
     textEl.classList.remove("cursor");
     if (!failed && !answer) textEl.innerHTML = "";
     if (stopRequested) {
