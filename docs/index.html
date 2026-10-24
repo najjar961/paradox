@@ -1,5 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Paradox</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<link rel="icon" href="app/icons/icon.svg" type="image/svg+xml">
 <meta name="description" content="Paradox is a self-hosted AI assistant for confidential documents. It reads everything and keeps nothing.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -48,7 +49,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 /* Nav */
 nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 22px; }
 .mark { display: flex; align-items: center; gap: 10px; font: 800 20px/1 var(--display); letter-spacing: -.02em; text-decoration: none; }
-.mark i { width: 14px; height: 14px; border-radius: 50%; border: 2.5px dashed var(--accent); display: inline-block; }
+.mark .logo { width: 15px; height: 22px; color: var(--accent); flex: none; margin-inline-end: -2px; }
 nav .links { display: flex; gap: 20px; font-size: 14.5px; }
 nav .links a { text-decoration: none; color: var(--ink-soft); }
 nav .links a:hover { color: var(--ink); }
@@ -175,7 +176,7 @@ footer a { color: var(--ink-soft); }
 
 <div class="wrap">
   <nav>
-    <a class="mark" href="#top" id="top"><i></i>Paradox</a>
+    <a class="mark" href="#top" id="top"><svg class="logo" viewBox="15 9 34 50" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M17 15a4 4 0 0 1 4-4h17l8 8v13H35v6H28v6H21a4 4 0 0 1-4-4Z M23.4 19h11.2a1.4 1.4 0 0 1 0 2.8h-11.2a1.4 1.4 0 0 1 0 -2.8ZM23.4 25h15.2a1.4 1.4 0 0 1 0 2.8h-15.2a1.4 1.4 0 0 1 0 -2.8ZM23.4 31h6.2a1.4 1.4 0 0 1 0 2.8h-6.2a1.4 1.4 0 0 1 0 -2.8Z"/><rect x="38" y="34" width="6" height="6" rx="1" fill="currentColor" opacity="1"/><rect x="30" y="40" width="6" height="6" rx="1" fill="currentColor" opacity="0.9"/><rect x="41" y="43" width="4.6" height="4.6" rx="1" fill="currentColor" opacity="0.7"/><rect x="34" y="49" width="4.2" height="4.2" rx="1" fill="currentColor" opacity="0.55"/><rect x="46" y="50" width="3.4" height="3.4" rx="1" fill="currentColor" opacity="0.4"/><rect x="40" y="55" width="2.6" height="2.6" rx="1" fill="currentColor" opacity="0.28"/></svg>Paradox</a>
     <div class="links">
       <a class="opt" href="#features" data-i18n>Features</a>
       <a class="opt" href="#how" data-i18n>How it works</a>

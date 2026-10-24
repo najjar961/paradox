@@ -7,7 +7,7 @@
 // the requests the app's background workers make, for the live privacy check in the sidebar:
 // which site, and how many bytes each request sends. It reports that to the open Paradox pages only.
 
-const SHELL_CACHE = "paradox-shell-v4";   // changes with every release (network first)
+const SHELL_CACHE = "paradox-shell-v5";   // changes with every release (network first)
 const VENDOR_CACHE = "paradox-vendor-v2"; // bump only when a file in vendor/ changes
 
 const SHELL = [

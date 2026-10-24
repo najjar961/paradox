@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>Paradox</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
   <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -12,7 +13,7 @@
   <!-- Login -->
   <main id="login-view" class="login" hidden>
     <form id="login-form" class="login-card" autocomplete="on">
-      <div class="brand"><span class="dot"></span>Paradox</div>
+      <div class="brand"><svg class="logo" viewBox="15 9 34 50" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M17 15a4 4 0 0 1 4-4h17l8 8v13H35v6H28v6H21a4 4 0 0 1-4-4Z M23.4 19h11.2a1.4 1.4 0 0 1 0 2.8h-11.2a1.4 1.4 0 0 1 0 -2.8ZM23.4 25h15.2a1.4 1.4 0 0 1 0 2.8h-15.2a1.4 1.4 0 0 1 0 -2.8ZM23.4 31h6.2a1.4 1.4 0 0 1 0 2.8h-6.2a1.4 1.4 0 0 1 0 -2.8Z"/><rect x="38" y="34" width="6" height="6" rx="1" fill="currentColor" opacity="1"/><rect x="30" y="40" width="6" height="6" rx="1" fill="currentColor" opacity="0.9"/><rect x="41" y="43" width="4.6" height="4.6" rx="1" fill="currentColor" opacity="0.7"/><rect x="34" y="49" width="4.2" height="4.2" rx="1" fill="currentColor" opacity="0.55"/><rect x="46" y="50" width="3.4" height="3.4" rx="1" fill="currentColor" opacity="0.4"/><rect x="40" y="55" width="2.6" height="2.6" rx="1" fill="currentColor" opacity="0.28"/></svg>Paradox</div>
       <p class="muted" data-i18n>Chat with your documents. Everything lives in memory and disappears when you leave.</p>
       <label><span data-i18n>Username</span><input name="username" autocomplete="username" required maxlength="64"></label>
       <label><span data-i18n>Password</span><input name="password" type="password" autocomplete="current-password" required maxlength="256"></label>
@@ -25,7 +26,7 @@
   <!-- App -->
   <div id="app-view" class="app" hidden>
     <aside class="sidebar">
-      <div class="brand"><span class="dot"></span>Paradox</div>
+      <div class="brand"><svg class="logo" viewBox="15 9 34 50" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M17 15a4 4 0 0 1 4-4h17l8 8v13H35v6H28v6H21a4 4 0 0 1-4-4Z M23.4 19h11.2a1.4 1.4 0 0 1 0 2.8h-11.2a1.4 1.4 0 0 1 0 -2.8ZM23.4 25h15.2a1.4 1.4 0 0 1 0 2.8h-15.2a1.4 1.4 0 0 1 0 -2.8ZM23.4 31h6.2a1.4 1.4 0 0 1 0 2.8h-6.2a1.4 1.4 0 0 1 0 -2.8Z"/><rect x="38" y="34" width="6" height="6" rx="1" fill="currentColor" opacity="1"/><rect x="30" y="40" width="6" height="6" rx="1" fill="currentColor" opacity="0.9"/><rect x="41" y="43" width="4.6" height="4.6" rx="1" fill="currentColor" opacity="0.7"/><rect x="34" y="49" width="4.2" height="4.2" rx="1" fill="currentColor" opacity="0.55"/><rect x="46" y="50" width="3.4" height="3.4" rx="1" fill="currentColor" opacity="0.4"/><rect x="40" y="55" width="2.6" height="2.6" rx="1" fill="currentColor" opacity="0.28"/></svg>Paradox</div>
       <div class="side-head">
         <span data-i18n>Workspaces</span>
         <button id="new-ws" class="icon" title="New workspace" aria-label="New workspace" data-i18n-attr="title,aria-label">+</button>
