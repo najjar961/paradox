@@ -192,6 +192,7 @@ $("#load-model").addEventListener("click", async () => {
   try {
     if (state.engine) { await state.engine.unload?.(); state.engine = null; }
     state.engine = SELFTEST ? new FakeEngine() : await createEngine(id);
+    keepModelStored();
     state.modelId = id;
     $("#model-ready").textContent = tr("{model} is ready.", { model: tr(m.label) });
     $("#model-ready").hidden = false;
@@ -216,14 +217,24 @@ $("#load-model").addEventListener("click", async () => {
   }
 });
 
+// Asks the browser not to evict the downloaded model when disk space runs low, so it is not
+// downloaded again. Only the public model is in that storage, never documents or chats.
+async function keepModelStored() {
+  try { if (navigator.storage?.persist && !(await navigator.storage.persisted())) await navigator.storage.persist(); } catch { /* optional */ }
+}
+
 async function createEngine(id) {
   const webllm = await loadWebllm();
+  let cached = false;
+  try { cached = await webllm.hasModelInCache(id); } catch { /* treat as a download */ }
   const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
   const startedAt = performance.now();
   const onProgress = (r) => {
     const f = Math.min(1, Math.max(0, r.progress || 0));
     $("#progress-bar").style.width = `${Math.round(f * 100)}%`;
-    $("#progress-text").textContent = f >= 1 ? tr("Starting the model…") : progressText(f, startedAt);
+    $("#progress-text").textContent = f >= 1 ? tr("Starting the model…")
+      : cached ? tr("Loading from this browser, no download… {p}%", { p: Math.round(f * 100) })
+      : progressText(f, startedAt);
   };
   try {
     return await webllm.CreateWebWorkerMLCEngine(worker, id, { initProgressCallback: onProgress },
