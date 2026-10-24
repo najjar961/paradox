@@ -215,7 +215,8 @@ def test_sources_go_with_the_question():
     assert msg.index("<sources>") < msg.index("My request: What is in the document?")
     assert 'document="Anschreiben.pdf"' in msg
     assert "untrusted" not in build_system_prompt()  # wording that made small models refuse
-    assert build_user_message("hi", [], has_documents=False) == "hi"
+    msg = build_user_message("hi", [], has_documents=False)
+    assert msg.endswith("My request: hi") and "No documents are open" in msg
 
 
 def test_small_documents_are_sent_whole(app):

@@ -253,3 +253,14 @@ def test_server_app_login_chat_compare_in_german(browser, server, files):
     pg.click("#logout")
     pg.locator("#login-error", has_text="gelöscht").wait_for()
     assert not pg.errors, pg.errors
+
+
+def test_markdown_renders_spaced_math_but_not_prices(browser, site):
+    pg = page_for(browser)
+    pg.goto(f"{site}/app/#selftest")
+    render = lambda s: pg.evaluate("s => window.pdxMarkdown.render(s)", s)
+    assert "<math" in render("Subtrahiere 7: $ 3x = 22 - 7 $.")
+    assert "<math" not in render("It costs $5 and $10.")
+    assert "<math" not in render("From $5 - $10.")
+    assert "---" not in render("Die Lösung ist $ x = 5 $. ---")
+    assert '<hr class="sep">' in render("New text\n---\nChanged the tone")

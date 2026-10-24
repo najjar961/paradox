@@ -78,6 +78,10 @@ def build_system_prompt(workspace_prompt: str = "", model: str = "a configurable
     return "\n\n".join(parts)
 
 
+# Without documents, small models still imitate the citation format; this note stops that.
+NO_DOCUMENTS_NOTE = "(No documents are open. Answer from your own knowledge. Do not add [1]-style citation markers or a list of sources or quotes, and only write a --- line when you edit text I gave you.)"
+
+
 def build_user_message(question: str, hits: list[tuple], has_documents: bool = True,
                        full_docs: list[tuple[str, str]] | None = None) -> str:
     if full_docs:
@@ -99,7 +103,7 @@ def build_user_message(question: str, hits: list[tuple], has_documents: bool = T
         sources = "<sources>\n(no excerpt matched this question)\n</sources>"
         intro = "I searched my documents but found nothing relevant:"
     else:
-        return question
+        return f"{NO_DOCUMENTS_NOTE}\n\nMy request: {question}"
     return f"{intro}\n{sources}\n\nMy request: {question}"
 
 

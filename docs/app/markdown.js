@@ -34,9 +34,17 @@
     s = s.replace(/```[^\n`]*\n?([\s\S]*?)(?:```|$)/g, (m, code) => `\n\n${put(`<pre><code>${esc(code.replace(/\n$/, ""))}</code></pre>`)}\n\n`);
     s = s.replace(/`[^`\n]+`/g, (m) => put(`<code>${esc(m.slice(1, -1))}</code>`));
     s = s.replace(/\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]/g, (m, a, b) => `\n\n${put(math((a ?? b).trim(), true))}\n\n`);
-    s = s.replace(/\\\(([\s\S]+?)\\\)|(^|[^\\$\w])\$([^\s$](?:[^$\n]*?[^\s$])?)\$(?![\w$])/g,
-      (m, a, pre, b) => (a != null ? put(math(a.trim(), false)) : pre + put(math(b, false))));
-    s = esc(s).replace(/\n[ \t]*-{3,}[ \t]*(?=\n|$)/g, "\n\n---\n\n");
+    // Inline $...$: tight like $x^2$, or spaced like "$ 3x = 22 - 7 $" (small models write that) when it
+    // contains a math operator. "$5 and $10" stays text: no operator, and a digit follows the second $.
+    s = s.replace(/\\\(([\s\S]+?)\\\)|(^|[^\\$\w])\$(?!\$)([^$\n]+?)\$(?![\w$])/g, (m, a, pre, b) => {
+      if (a != null) return put(math(a.trim(), false));
+      const tight = !/^\s|\s$/.test(b);
+      return tight || /[=<>^_\\+\-*/]/.test(b) ? pre + put(math(b.trim(), false)) : m;
+    });
+    s = esc(s)
+      .replace(/(\S)[ \t]+-{3,}[ \t]*(?=\n|$)/g, "$1\n---") // "text. ---" means a separator too
+      .replace(/\n[ \t]*-{3,}[ \t]*(?=\n|$)/g, "\n\n---\n\n")
+      .replace(/(\n\s*-{3,}\s*)+$/, ""); // a separator with nothing after it
 
     const out = [];
     for (const block of s.split(/\n{2,}/)) {
