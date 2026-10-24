@@ -181,7 +181,7 @@ def test_task_chip_fills_the_question(browser, site):
     pg.goto(f"{site}/app/#selftest")
     pg.click("#load-model")
     pg.locator("#model-ready").wait_for()
-    pg.locator("#tasks button").first.click()
+    pg.locator("#tasks button:not(.quiz-chip)").first.click()
     assert pg.input_value("#chat-input").strip() != ""
     assert not pg.errors, pg.errors
 
@@ -264,3 +264,30 @@ def test_markdown_renders_spaced_math_but_not_prices(browser, site):
     assert "<math" not in render("From $5 - $10.")
     assert "---" not in render("Die Lösung ist $ x = 5 $. ---")
     assert '<hr class="sep">' in render("New text\n---\nChanged the tone")
+
+
+def test_quiz_me_makes_practice_questions_from_notes(browser, site, files):
+    pg = page_for(browser)
+    pg.goto(f"{site}/app/#selftest")
+    pg.click("#load-model")
+    pg.locator("#model-ready").wait_for()
+    pg.locator(".quiz-chip").click()
+    pg.locator("#toast", has_text="notes").wait_for()  # nothing to quiz on yet
+    pg.set_input_files("#file-input", files)
+    pg.locator("#doc-list .doc-tools").nth(1).wait_for()
+    pg.locator(".quiz-chip").click()
+    pg.locator(".quiz-card").nth(2).wait_for()
+    assert pg.locator(".quiz-card").count() == 3
+    assert pg.locator(".quiz-answer:visible").count() == 0
+    card = pg.locator(".quiz-card").first
+    card.get_by_role("button", name="Show answer").click()
+    assert card.locator(".quiz-answer").is_visible()
+    card.get_by_role("button", name="I knew it").click()
+    assert pg.inner_text(".quiz-score") == "1 of 3 known"
+    for i in (1, 2):
+        c = pg.locator(".quiz-card").nth(i)
+        c.get_by_role("button", name="Show answer").click()
+        c.get_by_role("button", name="Not yet").click()
+    pg.get_by_role("button", name="Practise the ones I missed").click()
+    pg.locator(".msg.quiz").nth(1).locator(".quiz-card").first.wait_for()
+    assert not pg.errors, pg.errors
