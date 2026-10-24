@@ -291,3 +291,22 @@ def test_quiz_me_makes_practice_questions_from_notes(browser, site, files):
     pg.get_by_role("button", name="Practise the ones I missed").click()
     pg.locator(".msg.quiz").nth(1).locator(".quiz-card").first.wait_for()
     assert not pg.errors, pg.errors
+
+
+def test_best_model_is_default_and_falls_back_when_the_card_is_too_small(browser, site):
+    pg = page_for(browser)
+    pg.goto(f"{site}/app/#selftest-oom")
+    assert pg.input_value("#model-select") == "best"
+    pg.click("#load-model")
+    pg.locator("#model-ready").wait_for()
+    assert pg.input_value("#model-select") == "fast"
+    assert "1.7B" in pg.inner_text("#model-ready")
+    assert not pg.errors, pg.errors
+
+
+def test_phones_default_to_the_small_model(browser, site):
+    ctx = browser.new_context(viewport={"width": 390, "height": 800},
+                              user_agent="Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36")
+    pg = ctx.new_page()
+    pg.goto(f"{site}/app/#selftest")
+    assert pg.input_value("#model-select") == "fast"

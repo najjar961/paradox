@@ -19,14 +19,14 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", imp
 
 const $ = (s) => document.querySelector(s);
 const tr = window.i18n.t;
-const SELFTEST = location.hash === "#selftest"; // offline UI test with a fake model, no download
+const SELFTEST = location.hash.startsWith("#selftest"); // offline UI test with a fake model, no download
 
 // ------------------------------------------------------------------ settings
 
 const MODELS = [
   { key: "fast", base: "Qwen3-1.7B", label: "Fast · Qwen3 1.7B", note: "About 1 GB download, the quickest start. Runs on most laptops. Good for questions, summaries and simple tasks." },
   { key: "balanced", base: "Qwen3-4B", label: "Balanced · Qwen3 4B", note: "About 2.3 GB download. Much better at maths, homework and languages. Needs roughly 3.5 GB of graphics memory." },
-  { key: "best", base: "Qwen3-8B", label: "Best · Qwen3 8B", note: "About 4.6 GB download. Best answers in every language. Needs a strong graphics card (6 GB+)." },
+  { key: "best", base: "Qwen3-8B", label: "Best · Qwen3 8B", note: "About 4.6 GB download. Best answers in every language. Needs a strong graphics card (6 GB+); if yours is smaller, Paradox switches to a smaller model by itself." },
 ];
 // Models earlier versions of Paradox Lite offered. If one is still cached, the user can remove it.
 const OLD_MODELS = ["Qwen2.5-1.5B-Instruct", "Llama-3.2-3B-Instruct", "Qwen2.5-7B-Instruct"];
@@ -90,7 +90,9 @@ async function initModelCard() {
     o.textContent = tr(m.label);
     sel.append(o);
   }
-  sel.value = "fast"; // the smallest download, so a first visit gets going quickly
+  // The best model by default on computers; phones get the small one. Browsers don't reveal how much
+  // graphics memory there is, so if the card is too small, loading falls back to the next model by itself.
+  sel.value = isPhone() ? "fast" : "best";
   sel.addEventListener("change", updateModelNote);
 
   if (SELFTEST) { updateModelNote(); return; }
@@ -112,15 +114,22 @@ async function initModelCard() {
     setStatus("No usable graphics card", "off");
     return;
   }
-  // Returning visitors: pre-select the largest model already in this browser, so "Start" needs no download.
+  // Returning visitors: the largest model already in this browser starts by itself, since it needs no download.
+  let cached = null;
   try {
     const webllm = await loadWebllm();
     for (const m of [...MODELS].reverse()) {
-      if (await webllm.hasModelInCache(modelIdFor(m))) { sel.value = m.key; break; }
+      if (await webllm.hasModelInCache(modelIdFor(m))) { cached = m.key; break; }
     }
   } catch { /* cache check is optional */ }
+  if (cached) sel.value = cached;
   updateModelNote();
   findOldModels();
+  if (cached) startModel(cached);
+}
+
+function isPhone() {
+  return Boolean(navigator.userAgentData?.mobile) || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 }
 
 function oldModelIds() {
@@ -178,11 +187,15 @@ async function updateModelNote() {
   } catch { /* cache check is optional */ }
 }
 
-$("#load-model").addEventListener("click", async () => {
+$("#load-model").addEventListener("click", () => startModel($("#model-select").value));
+
+const OUT_OF_MEMORY = /memory|OOM|device lost|buffer|allocat|maxStorageBufferBindingSize/i;
+
+// Loads a model. If the graphics card is too small for it, tries the next smaller model.
+async function startModel(key) {
   if (state.loading || state.busy) return;
-  const m = MODELS.find((x) => x.key === $("#model-select").value);
-  const id = modelIdFor(m);
-  if (state.engine && state.modelId === id) return;
+  let m = MODELS.find((x) => x.key === key);
+  if (state.engine && state.modelId === modelIdFor(m)) return;
   state.loading = true;
   $("#load-model").disabled = true;
   $("#model-select").disabled = true;
@@ -191,9 +204,23 @@ $("#load-model").addEventListener("click", async () => {
   setStatus("Loading model…", "busy");
   try {
     if (state.engine) { await state.engine.unload?.(); state.engine = null; }
-    state.engine = SELFTEST ? new FakeEngine() : await createEngine(id);
+    for (;;) {
+      const id = modelIdFor(m);
+      try {
+        state.engine = SELFTEST ? await fakeEngineFor(m) : await createEngine(id);
+        state.modelId = id;
+        break;
+      } catch (err) {
+        const smaller = MODELS[MODELS.indexOf(m) - 1];
+        if (!smaller || !OUT_OF_MEMORY.test(String(err?.message || err))) { console.error(err); throw err; }
+        console.warn(`${m.label} did not fit on this graphics card`, err);
+        toast(tr("Your graphics card is too small for {model}. Switching to {smaller}.", { model: tr(m.label), smaller: tr(smaller.label) }));
+        m = smaller;
+        $("#model-select").value = m.key;
+        $("#progress-bar").style.width = "0%";
+      }
+    }
     keepModelStored();
-    state.modelId = id;
     $("#model-ready").textContent = tr("{model} is ready.", { model: tr(m.label) });
     $("#model-ready").hidden = false;
     loadLabel("Switch model");
@@ -201,9 +228,8 @@ $("#load-model").addEventListener("click", async () => {
     enableChat(true);
     warmOfflineCache(); // the user is committed now: keep every feature available offline
   } catch (err) {
-    console.error(err);
     const msg = String(err?.message || err);
-    const hint = /memory|OOM|device lost|buffer/i.test(msg)
+    const hint = OUT_OF_MEMORY.test(msg)
       ? tr("Your graphics card ran out of memory. Try the Fast model.")
       : tr("Loading failed. Check your connection, or try the Fast model.");
     toast(hint);
@@ -215,7 +241,13 @@ $("#load-model").addEventListener("click", async () => {
     $("#progress").hidden = true;
     updateModelNote();
   }
-});
+}
+
+// #selftest-oom pretends the graphics card is too small for the two larger models.
+async function fakeEngineFor(m) {
+  if (location.hash === "#selftest-oom" && m.key !== "fast") throw new Error(`Device lost: out of memory`);
+  return new FakeEngine();
+}
 
 // Asks the browser not to evict the downloaded model when disk space runs low, so it is not
 // downloaded again. Only the public model is in that storage, never documents or chats.
