@@ -381,6 +381,9 @@
     "More questions": "Weitere Fragen",
     "Practise the ones I missed": "Die verpassten üben",
     "Practice questions": "Übungsfragen",
+    "Switch to {model}": "Zu {model} wechseln",
+    "Keep this one": "Dieses behalten",
+    "Paradox is answering slowly on this computer. {model} answers faster.": "Paradox antwortet auf diesem Computer langsam. {model} antwortet schneller.",
   };
 
   const FR = {
@@ -759,6 +762,9 @@
     "More questions": "Plus de questions",
     "Practise the ones I missed": "Revoir celles que j'ai ratées",
     "Practice questions": "Questions d'entraînement",
+    "Switch to {model}": "Passer à {model}",
+    "Keep this one": "Garder celui-ci",
+    "Paradox is answering slowly on this computer. {model} answers faster.": "Paradox répond lentement sur cet ordinateur. {model} répond plus vite.",
   };
 
   const AR = {
@@ -1137,6 +1143,9 @@
     "More questions": "أسئلة أخرى",
     "Practise the ones I missed": "تدرّب على ما فاتني",
     "Practice questions": "أسئلة تدريبية",
+    "Switch to {model}": "الانتقال إلى {model}",
+    "Keep this one": "الإبقاء على هذا",
+    "Paradox is answering slowly on this computer. {model} answers faster.": "يجيب Paradox ببطء على هذا الحاسوب. {model} يجيب أسرع.",
   };
 
   const LANGS = { en: "English", de: "Deutsch", fr: "Français", ar: "العربية" };

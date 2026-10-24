@@ -310,3 +310,20 @@ def test_phones_default_to_the_small_model(browser, site):
     pg = ctx.new_page()
     pg.goto(f"{site}/app/#selftest")
     assert pg.input_value("#model-select") == "fast"
+
+
+def test_slow_answers_suggest_a_smaller_model_once(browser, site):
+    pg = page_for(browser)
+    pg.goto(f"{site}/app/#selftest-slow")
+    pg.click("#load-model")
+    pg.locator("#model-ready").wait_for()
+    for n in range(2):
+        pg.fill("#chat-input", "Hello")
+        pg.keyboard.press("Enter")
+        pg.locator(".msg.assistant .actions").nth(n).wait_for()
+        pg.wait_for_function("() => document.querySelector('#send').textContent === 'Send'")
+    assert pg.locator(".speed-hint").count() == 1  # asked once, not after every answer
+    pg.get_by_role("button", name="Switch to Balanced · Qwen3 4B").click()
+    pg.locator("#model-ready", has_text="4B").wait_for()
+    assert pg.input_value("#model-select") == "balanced"
+    assert not pg.errors, pg.errors

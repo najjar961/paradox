@@ -243,6 +243,33 @@ async function startModel(key) {
   }
 }
 
+// Built-in graphics can often load a big model but then write very slowly. After an answer,
+// if this model writes slower than people read, suggest the next smaller one (once per model).
+const SLOW = location.hash === "#selftest-slow" ? { pieces: 2, perSecond: 1e9 } : { pieces: 30, perSecond: 5 };
+const speedHinted = new Set();
+
+function checkSpeed(reply, speed) {
+  const m = MODELS.find((x) => modelIdFor(x) === state.modelId);
+  const smaller = m && MODELS[MODELS.indexOf(m) - 1];
+  if (!smaller || speedHinted.has(m.key) || speed.pieces < SLOW.pieces) return;
+  const perSecond = (speed.pieces - 1) / Math.max(0.001, (speed.last - speed.first) / 1000);
+  if (perSecond >= SLOW.perSecond) return;
+  speedHinted.add(m.key);
+  const switchBtn = el("button", { type: "button", className: "primary small", textContent: tr("Switch to {model}", { model: tr(smaller.label) }) });
+  const keep = el("button", { type: "button", className: "ghost small", textContent: tr("Keep this one") });
+  const hint = el("div", { className: "speed-hint", role: "status" },
+    el("p", { textContent: tr("Paradox is answering slowly on this computer. {model} answers faster.", { model: tr(smaller.label) }) }),
+    el("div", { className: "speed-actions" }, switchBtn, keep));
+  switchBtn.addEventListener("click", () => {
+    hint.remove();
+    $("#model-select").value = smaller.key;
+    updateModelNote();
+    startModel(smaller.key);
+  });
+  keep.addEventListener("click", () => hint.remove());
+  reply.append(hint);
+}
+
 // #selftest-oom pretends the graphics card is too small for the two larger models.
 async function fakeEngineFor(m) {
   if (location.hash === "#selftest-oom" && m.key !== "fast") throw new Error(`Device lost: out of memory`);
@@ -1505,6 +1532,7 @@ async function send(question, pair = null) {
 
   let answer = "";
   let failed = false;
+  const speed = { pieces: 0, first: null, last: null }; // each streamed piece is about one token
   try {
     const stream = await state.engine.chat.completions.create({
       messages, stream: true, temperature: 0.3, max_tokens: 1500, ...NO_THINKING,
@@ -1512,6 +1540,9 @@ async function send(question, pair = null) {
     for await (const chunk of stream) {
       const piece = chunk.choices?.[0]?.delta?.content;
       if (!piece) continue;
+      speed.pieces++;
+      speed.first ??= performance.now();
+      speed.last = performance.now();
       answer += piece;
       const shown = stripThinking(answer);
       textEl.innerHTML = renderMarkdown(turn.sources.length || turn.compare ? shown : dropInventedSources(shown));
@@ -1540,6 +1571,7 @@ async function send(question, pair = null) {
       attachActions(reply, answer, turn.sources[0]?.document);
       if (turn.compare) attachCompare(reply, turn.compare);
       else renderChanges(reply, answer);
+      if (!stopRequested) checkSpeed(reply, speed);
       state.history.push({ role: "user", content: question }, { role: "assistant", content: answer + (stopRequested ? "\n\n[stopped]" : "") });
     }
     setStreaming(false);
