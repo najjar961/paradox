@@ -1920,7 +1920,7 @@ let meterQueued = false;
 function renderMeter() {
   if (meterQueued) return;
   meterQueued = true;
-  requestAnimationFrame(() => {
+  setTimeout(() => { // not requestAnimationFrame: that pauses while the tab is in the background
     meterQueued = false;
     const sent = $("#meter-sent");
     if (!sent) return;
@@ -1932,7 +1932,7 @@ function renderMeter() {
     badge?.classList.toggle("alert", !clean);
     const sites = [...traffic.hosts.keys()].map((h) => (h === location.host ? tr("this app") : h));
     if ($("#meter-hosts")) $("#meter-hosts").textContent = tr("{n} download, from: {sites}|{n} downloads, from: {sites}", { n: traffic.requests, sites: sites.join(", ") });
-  });
+  }, 100);
 }
 
 $("#meter-badge")?.addEventListener("click", () => $("#meter-details")?.click());

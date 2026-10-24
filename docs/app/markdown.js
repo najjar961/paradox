@@ -35,11 +35,13 @@
     s = s.replace(/`[^`\n]+`/g, (m) => put(`<code>${esc(m.slice(1, -1))}</code>`));
     s = s.replace(/\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]/g, (m, a, b) => `\n\n${put(math((a ?? b).trim(), true))}\n\n`);
     // Inline $...$: tight like $x^2$, or spaced like "$ 3x = 22 - 7 $" (small models write that) when it
-    // contains a math operator. "$5 and $10" stays text: no operator, and a digit follows the second $.
+    // contains a math operator, or is a lone variable. "$5 and $10" stays text: no operator, and a digit follows the second $.
     s = s.replace(/\\\(([\s\S]+?)\\\)|(^|[^\\$\w])\$(?!\$)([^$\n]+?)\$(?![\w$])/g, (m, a, pre, b) => {
       if (a != null) return put(math(a.trim(), false));
       const tight = !/^\s|\s$/.test(b);
-      return tight || /[=<>^_\\+\-*/]/.test(b) ? pre + put(math(b.trim(), false)) : m;
+      // A lone variable such as "$ n $" or "$ x_i $" is maths too.
+      const lone = /^[A-Za-z](?:_\{?\w+\}?)?$/.test(b.trim());
+      return tight || lone || /[=<>^_\\+\-*/]/.test(b) ? pre + put(math(b.trim(), false)) : m;
     });
     s = esc(s)
       .replace(/(\S)[ \t]+-{3,}[ \t]*(?=\n|$)/g, "$1\n---") // "text. ---" means a separator too

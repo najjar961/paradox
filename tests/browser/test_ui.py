@@ -262,6 +262,7 @@ def test_markdown_renders_spaced_math_but_not_prices(browser, site):
     assert "<math" in render("Subtrahiere 7: $ 3x = 22 - 7 $.")
     assert "<math" not in render("It costs $5 and $10.")
     assert "<math" not in render("From $5 - $10.")
+    assert "<math" in render("where $ n $ is the number of values")
     assert "---" not in render("Die Lösung ist $ x = 5 $. ---")
     assert '<hr class="sep">' in render("New text\n---\nChanged the tone")
 
