@@ -158,7 +158,6 @@
     "Best · Qwen3 8B": "Beste · Qwen3 8B",
     "About 1 GB download, the quickest start. Runs on most laptops. Good for questions, summaries and simple tasks.": "Etwa 1 GB Download, der schnellste Start. Läuft auf den meisten Laptops. Gut für Fragen, Zusammenfassungen und einfache Aufgaben.",
     "About 2.3 GB download. Much better at maths, homework and languages. Needs roughly 3.5 GB of graphics memory.": "Etwa 2,3 GB Download. Deutlich besser bei Mathe, Hausaufgaben und Sprachen. Braucht rund 3,5 GB Grafikspeicher.",
-    "About 4.6 GB download. Best answers in every language. Needs a strong graphics card (6 GB+); if yours is smaller, Paradox switches to a smaller model by itself.": "Etwa 4,6 GB Download. Die besten Antworten in jeder Sprache. Braucht eine starke Grafikkarte (6 GB+); ist sie kleiner, wechselt Paradox von selbst zu einem kleineren Modell.",
     "Your graphics card is too small for {model}. Switching to {smaller}.": "Ihre Grafikkarte ist zu klein für {model}. Paradox wechselt zu {smaller}.",
     "less than a minute left": "weniger als eine Minute",
     "about {n} min left": "noch etwa {n} Min.",
@@ -405,6 +404,11 @@
     "Sample notes added. When the model is ready, click Quiz me.": "Beispiel-Vorlesung hinzugefügt. Sobald das Modell bereit ist, klicken Sie auf Abfragen.",
     "Sent: {size}": "Gesendet: {size}",
     "Loading into the graphics card… {p}%": "Wird in die Grafikkarte geladen … {p}%",
+    "About 4.6 GB, the best answers in every language. Paradox starts at once with the small model and downloads this one in the background. Needs a strong graphics card (6 GB+); otherwise Paradox stays with a smaller model.": "Etwa 4,6 GB, die besten Antworten in jeder Sprache. Paradox startet sofort mit dem kleinen Modell und lädt dieses im Hintergrund. Braucht eine starke Grafikkarte (6 GB+); sonst bleibt Paradox bei einem kleineren Modell.",
+    "Downloading {model} in the background\u2026 {p}%. Paradox switches to it by itself.": "{model} wird im Hintergrund geladen … {p} %. Paradox wechselt von selbst.",
+    "{model} is downloaded. Switching when Paradox is idle\u2026": "{model} ist geladen. Paradox wechselt, sobald es frei ist …",
+    "Switched to {model} for the best answers.": "Gewechselt zu {model} für die besten Antworten.",
+    "{model} doesn't fit on this graphics card. Paradox stays with {smaller}.": "{model} passt nicht auf diese Grafikkarte. Paradox bleibt bei {smaller}.",
   };
 
   const FR = {
@@ -560,7 +564,6 @@
     "Best · Qwen3 8B": "Meilleur · Qwen3 8B",
     "About 1 GB download, the quickest start. Runs on most laptops. Good for questions, summaries and simple tasks.": "Environ 1 Go à télécharger, le démarrage le plus rapide. Fonctionne sur la plupart des portables. Bien pour les questions, les résumés et les tâches simples.",
     "About 2.3 GB download. Much better at maths, homework and languages. Needs roughly 3.5 GB of graphics memory.": "Environ 2,3 Go à télécharger. Bien meilleur en maths, pour les devoirs et les langues. Nécessite environ 3,5 Go de mémoire graphique.",
-    "About 4.6 GB download. Best answers in every language. Needs a strong graphics card (6 GB+); if yours is smaller, Paradox switches to a smaller model by itself.": "Environ 4,6 Go à télécharger. Les meilleures réponses dans toutes les langues. Nécessite une carte graphique puissante (6 Go+) ; si la vôtre est plus petite, Paradox passe tout seul à un modèle plus petit.",
     "Your graphics card is too small for {model}. Switching to {smaller}.": "Votre carte graphique est trop petite pour {model}. Passage à {smaller}.",
     "less than a minute left": "moins d'une minute restante",
     "about {n} min left": "environ {n} min restantes",
@@ -807,6 +810,11 @@
     "Sample notes added. When the model is ready, click Quiz me.": "Exemple de cours ajouté. Quand le modèle est prêt, cliquez sur Interroge-moi.",
     "Sent: {size}": "Envoyé : {size}",
     "Loading into the graphics card… {p}%": "Chargement dans la carte graphique… {p}%",
+    "About 4.6 GB, the best answers in every language. Paradox starts at once with the small model and downloads this one in the background. Needs a strong graphics card (6 GB+); otherwise Paradox stays with a smaller model.": "Environ 4,6 Go, les meilleures réponses dans toutes les langues. Paradox démarre tout de suite avec le petit modèle et télécharge celui-ci en arrière-plan. Nécessite une carte graphique puissante (6 Go+) ; sinon Paradox reste sur un modèle plus petit.",
+    "Downloading {model} in the background\u2026 {p}%. Paradox switches to it by itself.": "Téléchargement de {model} en arrière-plan… {p} %. Paradox passera dessus tout seul.",
+    "{model} is downloaded. Switching when Paradox is idle\u2026": "{model} est téléchargé. Changement dès que Paradox est libre…",
+    "Switched to {model} for the best answers.": "Passé à {model} pour les meilleures réponses.",
+    "{model} doesn't fit on this graphics card. Paradox stays with {smaller}.": "{model} ne tient pas sur cette carte graphique. Paradox reste sur {smaller}.",
   };
 
   const AR = {
@@ -962,7 +970,6 @@
     "Best · Qwen3 8B": "الأفضل · Qwen3 8B",
     "About 1 GB download, the quickest start. Runs on most laptops. Good for questions, summaries and simple tasks.": "تنزيل بحجم 1 غيغابايت تقريباً، وأسرع بداية. يعمل على معظم الحواسيب المحمولة. مناسب للأسئلة والملخصات والمهام البسيطة.",
     "About 2.3 GB download. Much better at maths, homework and languages. Needs roughly 3.5 GB of graphics memory.": "تنزيل بحجم 2.3 غيغابايت تقريباً. أفضل بكثير في الرياضيات والواجبات واللغات. يحتاج إلى نحو 3.5 غيغابايت من ذاكرة الرسوميات.",
-    "About 4.6 GB download. Best answers in every language. Needs a strong graphics card (6 GB+); if yours is smaller, Paradox switches to a smaller model by itself.": "تنزيل بحجم 4.6 غيغابايت تقريباً. أفضل الأجوبة بكل اللغات. يحتاج إلى بطاقة رسوميات قوية (6 غيغابايت أو أكثر)؛ وإن كانت بطاقتك أصغر، ينتقل Paradox تلقائياً إلى نموذج أصغر.",
     "Your graphics card is too small for {model}. Switching to {smaller}.": "بطاقة الرسوميات لديك صغيرة على {model}. جارٍ الانتقال إلى {smaller}.",
     "less than a minute left": "أقل من دقيقة متبقية",
     "about {n} min left": "نحو {n} دقيقة متبقية",
@@ -1209,6 +1216,11 @@
     "Sample notes added. When the model is ready, click Quiz me.": "أُضيفت المحاضرة النموذجية. عندما يصبح النموذج جاهزاً، اضغط على اختبرني.",
     "Sent: {size}": "المُرسَل: {size}",
     "Loading into the graphics card… {p}%": "جارٍ التحميل إلى بطاقة الرسوميات… {p}%",
+    "About 4.6 GB, the best answers in every language. Paradox starts at once with the small model and downloads this one in the background. Needs a strong graphics card (6 GB+); otherwise Paradox stays with a smaller model.": "نحو 4.6 غيغابايت، وأفضل الأجوبة بكل اللغات. يبدأ Paradox فوراً بالنموذج الصغير ويُنزّل هذا النموذج في الخلفية. يحتاج إلى بطاقة رسوميات قوية (6 غيغابايت أو أكثر)؛ وإلا يبقى Paradox على نموذج أصغر.",
+    "Downloading {model} in the background\u2026 {p}%. Paradox switches to it by itself.": "جارٍ تنزيل {model} في الخلفية… {p}%. سينتقل Paradox إليه تلقائياً.",
+    "{model} is downloaded. Switching when Paradox is idle\u2026": "اكتمل تنزيل {model}. سيتم الانتقال عندما يصبح Paradox متفرغاً…",
+    "Switched to {model} for the best answers.": "تم الانتقال إلى {model} للحصول على أفضل الأجوبة.",
+    "{model} doesn't fit on this graphics card. Paradox stays with {smaller}.": "{model} لا يتسع لبطاقة الرسوميات هذه. سيبقى Paradox على {smaller}.",
   };
 
   const LANGS = { en: "English", de: "Deutsch", fr: "Français", ar: "العربية" };

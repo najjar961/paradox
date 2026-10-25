@@ -369,3 +369,53 @@ def test_sample_notes_start_a_quiz(browser, site):
     pg.locator(".quiz-card").first.wait_for()
     assert "Vorlesung 3" in pg.inner_text(".quiz-card")
     assert not pg.errors, pg.errors
+
+
+def test_first_visit_starts_small_and_switches_to_best_in_the_background(browser, site):
+    pg = page_for(browser)
+    pg.goto(f"{site}/app/#selftest-bg")
+    assert pg.input_value("#model-select") == "best"
+    pg.click("#load-model")
+    pg.locator("#model-ready", has_text="Fast · Qwen3 1.7B is ready.").wait_for()
+    pg.locator("#bg-model", has_text="in the background").wait_for()
+    pg.locator("#model-ready", has_text="Best · Qwen3 8B is ready.").wait_for()
+    assert pg.input_value("#model-select") == "best"
+    assert pg.locator("#bg-model").is_hidden()
+    assert not pg.errors, pg.errors
+
+
+def test_background_download_can_be_stopped(browser, site):
+    pg = page_for(browser)
+    pg.goto(f"{site}/app/#selftest-bg")
+    pg.click("#load-model")
+    pg.locator("#bg-model", has_text="in the background").wait_for()
+    pg.click("#bg-stop")
+    assert pg.locator("#bg-model").is_hidden()
+    pg.wait_for_timeout(1500)
+    assert "1.7B" in pg.inner_text("#model-ready")
+    assert not pg.errors, pg.errors
+
+
+def test_best_model_that_does_not_fit_keeps_the_small_one(browser, site):
+    pg = page_for(browser)
+    pg.goto(f"{site}/app/#selftest-oom")
+    pg.click("#load-model")
+    pg.locator("#toast", has_text="doesn't fit").wait_for()
+    pg.locator("#model-ready", has_text="Fast · Qwen3 1.7B is ready.").wait_for()
+    assert pg.input_value("#model-select") == "fast"
+    assert not pg.errors, pg.errors
+
+
+def test_start_and_security_pages_contact_no_other_site(browser, site):
+    for path in ["/", "/security.html"]:
+        pg = page_for(browser)
+        hosts = set()
+        pg.on("request", lambda r: hosts.add(r.url.split("/")[2]))
+        pg.goto(site + path)
+        pg.wait_for_load_state("networkidle")
+        own = site.split("/")[2]
+        assert hosts == {own}, (path, hosts)
+        # the fonts really come from this site
+        if path == "/":
+            assert pg.evaluate("document.fonts.check('800 20px \"Bricolage Grotesque\"')")
+        pg.context.close()

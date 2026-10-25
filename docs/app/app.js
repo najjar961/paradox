@@ -26,7 +26,7 @@ const SELFTEST = location.hash.startsWith("#selftest"); // offline UI test with 
 const MODELS = [
   { key: "fast", base: "Qwen3-1.7B", label: "Fast · Qwen3 1.7B", note: "About 1 GB download, the quickest start. Runs on most laptops. Good for questions, summaries and simple tasks." },
   { key: "balanced", base: "Qwen3-4B", label: "Balanced · Qwen3 4B", note: "About 2.3 GB download. Much better at maths, homework and languages. Needs roughly 3.5 GB of graphics memory." },
-  { key: "best", base: "Qwen3-8B", label: "Best · Qwen3 8B", note: "About 4.6 GB download. Best answers in every language. Needs a strong graphics card (6 GB+); if yours is smaller, Paradox switches to a smaller model by itself." },
+  { key: "best", base: "Qwen3-8B", label: "Best · Qwen3 8B", note: "About 4.6 GB, the best answers in every language. Paradox starts at once with the small model and downloads this one in the background. Needs a strong graphics card (6 GB+); otherwise Paradox stays with a smaller model." },
 ];
 // Models earlier versions of Paradox Lite offered. If one is still cached, the user can remove it.
 const OLD_MODELS = ["Qwen2.5-1.5B-Instruct", "Llama-3.2-3B-Instruct", "Qwen2.5-7B-Instruct"];
@@ -125,7 +125,10 @@ async function initModelCard() {
   if (cached) sel.value = cached;
   updateModelNote();
   findOldModels();
-  if (cached) startModel(cached);
+  const best = MODELS.find((m) => m.key === "best");
+  if (cached === "best" || isPhone()) { if (cached) startModel(cached); }
+  else if (cached && (await partlyDownloaded(best))) { if (await startModel(cached)) backgroundFetch(best); }
+  else if (cached) startModel(cached);
 }
 
 function isPhone() {
@@ -187,15 +190,22 @@ async function updateModelNote() {
   } catch { /* cache check is optional */ }
 }
 
-$("#load-model").addEventListener("click", () => startModel($("#model-select").value));
+$("#load-model").addEventListener("click", () => {
+  const key = $("#model-select").value;
+  stopBackground(); // the user chose: no switch behind their back
+  if (key === "best" && !isPhone()) startBestSoon();
+  else startModel(key);
+});
 
 const OUT_OF_MEMORY = /memory|OOM|device lost|buffer|allocat|maxStorageBufferBindingSize/i;
 
-// Loads a model. If the graphics card is too small for it, tries the next smaller model.
-async function startModel(key) {
-  if (state.loading || state.busy) return;
+// Loads a model. If the graphics card is too small for it, tries the next smaller model
+// (unless cascade is false: then it gives up and returns false). Returns true when a model is ready.
+async function startModel(key, { cascade = true } = {}) {
+  if (state.loading || state.busy) return false;
   let m = MODELS.find((x) => x.key === key);
-  if (state.engine && state.modelId === modelIdFor(m)) return;
+  if (state.engine && state.modelId === modelIdFor(m)) return true;
+  let ok = false;
   state.loading = true;
   $("#load-model").disabled = true;
   $("#model-select").disabled = true;
@@ -211,8 +221,11 @@ async function startModel(key) {
         state.modelId = id;
         break;
       } catch (err) {
-        const smaller = MODELS[MODELS.indexOf(m) - 1];
-        if (!smaller || !OUT_OF_MEMORY.test(String(err?.message || err))) { console.error(err); throw err; }
+        const smaller = cascade && MODELS[MODELS.indexOf(m) - 1];
+        if (!smaller || !OUT_OF_MEMORY.test(String(err?.message || err))) {
+          if (cascade) console.error(err); else console.warn(err);
+          throw err;
+        }
         console.warn(`${m.label} did not fit on this graphics card`, err);
         toast(tr("Your graphics card is too small for {model}. Switching to {smaller}.", { model: tr(m.label), smaller: tr(smaller.label) }));
         m = smaller;
@@ -227,8 +240,10 @@ async function startModel(key) {
     setStatus(m.label.split(" · ")[1], "on");
     enableChat(true);
     warmOfflineCache(); // the user is committed now: keep every feature available offline
+    ok = true;
   } catch (err) {
     const msg = String(err?.message || err);
+    if (!cascade && OUT_OF_MEMORY.test(msg)) { setStatus("No model loaded", "off"); return false; }
     const hint = OUT_OF_MEMORY.test(msg)
       ? tr("Your graphics card ran out of memory. Try the Fast model.")
       : tr("Loading failed. Check your connection, or try the Fast model.");
@@ -241,6 +256,135 @@ async function startModel(key) {
     $("#progress").hidden = true;
     updateModelNote();
   }
+  return ok;
+}
+
+// ------------------------------------------------------------------ instant start
+// The best model is a 4.6 GB download. So on a first visit Paradox starts at once with the small
+// model (about 1 GB) and downloads the best one in the background, into the same browser storage
+// the AI library uses, without loading it onto the graphics card. When it is complete and Paradox
+// is idle, it switches by itself. Only public model files are downloaded; nothing is sent.
+
+async function isCached(m) {
+  if (SELFTEST) return fakeCache.has(m.key);
+  try { return await (await loadWebllm()).hasModelInCache(modelIdFor(m)); } catch { return false; }
+}
+
+// In tests, the background download only runs where a test asks for it (#selftest-bg, #selftest-oom).
+const BACKGROUND = !SELFTEST || /bg|oom/.test(location.hash);
+
+async function startBestSoon() {
+  const best = MODELS.find((m) => m.key === "best");
+  if (!BACKGROUND || (await isCached(best))) return startModel("best");
+  const first = (await isCached(MODELS.find((m) => m.key === "balanced"))) ? "balanced" : "fast";
+  $("#model-select").value = first;
+  updateModelNote();
+  if (await startModel(first)) backgroundFetch(best);
+}
+
+const bg = { controller: null };
+
+function stopBackground() {
+  if (bg.controller) bg.controller.abort();
+  bg.controller = null;
+  $("#bg-model").hidden = true;
+}
+$("#bg-stop").addEventListener("click", stopBackground);
+
+// The files the AI library would download for a model, in the storage it reads them from
+// (see web-llm: cleanModelUrl, asyncLoadTokenizer, fetchTensorCache).
+async function prefetchModel(id, onProgress, signal) {
+  const webllm = await loadWebllm();
+  const rec = webllm.prebuiltAppConfig.model_list.find((r) => r.model_id === id);
+  if (!rec) throw new Error(`Unknown model ${id}`);
+  let base = rec.model.endsWith("/") ? rec.model : `${rec.model}/`;
+  if (!/.+\/resolve\/.+\//.test(base)) base += "resolve/main/";
+  base = new URL(base).href;
+  const store = async (scope, url) => {
+    const cache = await caches.open(scope);
+    const req = new Request(url, { signal });
+    if (!(await cache.match(req))) await cache.add(req);
+    return cache.match(req);
+  };
+  const config = await (await store("webllm/config", new URL("mlc-chat-config.json", base).href)).json();
+  await store("webllm/wasm", rec.model_lib);
+  const tokenizer = ["tokenizer.json", "tokenizer.model"].find((f) => config.tokenizer_files?.includes(f));
+  if (tokenizer) await store("webllm/model", new URL(tokenizer, base).href);
+  const records = (await (await store("webllm/model", new URL("tensor-cache.json", base).href)).json()).records;
+  const total = records.reduce((n, r) => n + r.nbytes, 0);
+  let done = 0, next = 0;
+  const worker = async () => {
+    while (next < records.length) {
+      const r = records[next++];
+      await store("webllm/model", new URL(r.dataPath, base).href);
+      done += r.nbytes;
+      onProgress(done / total);
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]); // four at a time, like the library
+}
+
+// Has a background download of this model been started before (and not finished)?
+async function partlyDownloaded(m) {
+  if (SELFTEST) return false;
+  try {
+    const rec = (await loadWebllm()).prebuiltAppConfig.model_list.find((r) => r.model_id === modelIdFor(m));
+    let base = rec.model.endsWith("/") ? rec.model : `${rec.model}/`;
+    if (!/.+\/resolve\/.+\//.test(base)) base += "resolve/main/";
+    return Boolean(await (await caches.open("webllm/model")).match(new URL("tensor-cache.json", base).href));
+  } catch { return false; }
+}
+
+async function backgroundFetch(best) {
+  if (!SELFTEST) {
+    try {
+      const { quota, usage } = await navigator.storage.estimate();
+      if (quota - usage < 5.5e9) return; // not enough room in the browser: stay with the model we have
+    } catch { /* no estimate: try anyway */ }
+  }
+  const controller = new AbortController();
+  bg.controller = controller;
+  const text = $("#bg-text");
+  const show = (f) => { text.textContent = tr("Downloading {model} in the background… {p}%. Paradox switches to it by itself.", { model: tr(best.label), p: Math.round(f * 100) }); };
+  $("#bg-model").hidden = false;
+  show(0);
+  try {
+    await (SELFTEST ? fakePrefetch(best, show, controller.signal) : prefetchModel(modelIdFor(best), show, controller.signal));
+  } catch (err) {
+    if (controller.signal.aborted) return;
+    console.warn("Background download failed", err);
+    $("#bg-model").hidden = true;
+    bg.controller = null;
+    return; // the small model keeps working; the next visit continues the download
+  }
+  if (bg.controller !== controller) return;
+  text.textContent = tr("{model} is downloaded. Switching when Paradox is idle…", { model: tr(best.label) });
+  while ((state.busy || state.loading) && bg.controller === controller) await new Promise((r) => setTimeout(r, 500));
+  if (bg.controller !== controller) return;
+  bg.controller = null;
+  $("#bg-model").hidden = true;
+  const before = MODELS.find((x) => modelIdFor(x) === state.modelId);
+  $("#model-select").value = best.key;
+  if (await startModel(best.key, { cascade: false })) {
+    toast(tr("Switched to {model} for the best answers.", { model: tr(best.label) }));
+  } else if (before) {
+    toast(tr("{model} doesn't fit on this graphics card. Paradox stays with {smaller}.", { model: tr(best.label), smaller: tr(before.label) }));
+    $("#model-select").value = before.key;
+    await startModel(before.key);
+    try { if (!SELFTEST) await (await loadWebllm()).deleteModelAllInfoInCache(modelIdFor(best)); } catch { /* space is freed next time */ }
+    fakeCache.delete(best.key);
+  }
+}
+
+// Stand-ins for #selftest: a fake download that finishes in about a second.
+const fakeCache = new Set();
+async function fakePrefetch(m, onProgress, signal) {
+  for (let i = 1; i <= 10; i++) {
+    if (signal.aborted) throw new DOMException("aborted", "AbortError");
+    await new Promise((r) => setTimeout(r, 80));
+    onProgress(i / 10);
+  }
+  fakeCache.add(m.key);
 }
 
 // Built-in graphics can often load a big model but then write very slowly. After an answer,
@@ -273,6 +417,7 @@ function checkSpeed(reply, speed) {
 // #selftest-oom pretends the graphics card is too small for the two larger models.
 async function fakeEngineFor(m) {
   if (location.hash === "#selftest-oom" && m.key !== "fast") throw new Error(`Device lost: out of memory`);
+  fakeCache.add(m.key);
   return new FakeEngine();
 }
 
