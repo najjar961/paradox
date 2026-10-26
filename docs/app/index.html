@@ -19,7 +19,10 @@
 <body>
   <div class="app">
     <aside class="side" id="side">
-      <a class="brand" href="../"><svg class="logo" viewBox="15 9 34 50" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M17 15a4 4 0 0 1 4-4h17l8 8v13H35v6H28v6H21a4 4 0 0 1-4-4Z M23.4 19h11.2a1.4 1.4 0 0 1 0 2.8h-11.2a1.4 1.4 0 0 1 0 -2.8ZM23.4 25h15.2a1.4 1.4 0 0 1 0 2.8h-15.2a1.4 1.4 0 0 1 0 -2.8ZM23.4 31h6.2a1.4 1.4 0 0 1 0 2.8h-6.2a1.4 1.4 0 0 1 0 -2.8Z"/><rect x="38" y="34" width="6" height="6" rx="1" fill="currentColor" opacity="1"/><rect x="30" y="40" width="6" height="6" rx="1" fill="currentColor" opacity="0.9"/><rect x="41" y="43" width="4.6" height="4.6" rx="1" fill="currentColor" opacity="0.7"/><rect x="34" y="49" width="4.2" height="4.2" rx="1" fill="currentColor" opacity="0.55"/><rect x="46" y="50" width="3.4" height="3.4" rx="1" fill="currentColor" opacity="0.4"/><rect x="40" y="55" width="2.6" height="2.6" rx="1" fill="currentColor" opacity="0.28"/></svg>Paradox <span class="lite">Lite</span></a>
+      <div class="side-head">
+        <a class="brand" href="../"><svg class="logo" viewBox="15 9 34 50" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M17 15a4 4 0 0 1 4-4h17l8 8v13H35v6H28v6H21a4 4 0 0 1-4-4Z M23.4 19h11.2a1.4 1.4 0 0 1 0 2.8h-11.2a1.4 1.4 0 0 1 0 -2.8ZM23.4 25h15.2a1.4 1.4 0 0 1 0 2.8h-15.2a1.4 1.4 0 0 1 0 -2.8ZM23.4 31h6.2a1.4 1.4 0 0 1 0 2.8h-6.2a1.4 1.4 0 0 1 0 -2.8Z"/><rect x="38" y="34" width="6" height="6" rx="1" fill="currentColor" opacity="1"/><rect x="30" y="40" width="6" height="6" rx="1" fill="currentColor" opacity="0.9"/><rect x="41" y="43" width="4.6" height="4.6" rx="1" fill="currentColor" opacity="0.7"/><rect x="34" y="49" width="4.2" height="4.2" rx="1" fill="currentColor" opacity="0.55"/><rect x="46" y="50" width="3.4" height="3.4" rx="1" fill="currentColor" opacity="0.4"/><rect x="40" y="55" width="2.6" height="2.6" rx="1" fill="currentColor" opacity="0.28"/></svg>Paradox <span class="lite">Lite</span></a>
+        <button id="side-close" class="icon only-narrow" type="button" aria-label="Close" data-i18n-attr="aria-label">✕</button>
+      </div>
 
       <section class="card" id="model-card">
         <h2 data-i18n>AI model</h2>
@@ -71,6 +74,7 @@
         <a class="small security-link" href="../security.html" data-i18n>How to check it yourself</a>
       </section>
     </aside>
+    <div id="scrim" class="scrim" hidden></div>
 
     <main class="main">
       <header class="top">
@@ -89,10 +93,10 @@
           <ol>
             <li data-i18n-html>Pick a model and click <b>Download &amp; start</b>. The first time takes a few minutes.</li>
             <li data-i18n-html>Drop in your homework, a contract or a report, or just ask without a file.</li>
-            <li><button type="button" class="link try-sample" data-i18n>No file at hand? Try sample lecture notes</button></li>
             <li data-i18n-html>Use the buttons above the box: <i>Quiz me</i> turns your notes into practice questions; <i>Explain step by step</i>, <i>Check my solution</i> and <i>Translate</i> help with any task.</li>
             <li data-i18n-html>Edit files in their original layout, compare two versions, or black out personal data.</li>
           </ol>
+          <button type="button" class="try-sample sample-btn" data-i18n>No file at hand? Try sample lecture notes</button>
         </div>
       </div>
 

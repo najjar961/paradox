@@ -126,7 +126,8 @@ async function initModelCard() {
   updateModelNote();
   findOldModels();
   const best = MODELS.find((m) => m.key === "best");
-  if (cached === "best" || isPhone()) { if (cached) startModel(cached); }
+  if (isPhone()) { /* phones: loading a model makes the page sluggish, so it waits for a tap on Start */ }
+  else if (cached === "best") startModel(cached);
   else if (cached && (await partlyDownloaded(best))) { if (await startModel(cached)) backgroundFetch(best); }
   else if (cached) startModel(cached);
 }
@@ -239,6 +240,7 @@ async function startModel(key, { cascade = true } = {}) {
     loadLabel("Switch model");
     setStatus(m.label.split(" · ")[1], "on");
     enableChat(true);
+    if (narrow()) setSide(false);
     warmOfflineCache(); // the user is committed now: keep every feature available offline
     ok = true;
   } catch (err) {
@@ -896,7 +898,7 @@ async function addFiles(files) {
     pending.shift();
     show();
   }
-  if (window.matchMedia("(max-width: 860px)").matches && state.docs.length) $("#side").classList.remove("open");
+  if (narrow() && state.docs.length) setSide(false);
   updateMeaning();
 }
 
@@ -924,7 +926,17 @@ function emptyState() {
   return el;
 }
 
-$("#menu").addEventListener("click", () => $("#side").classList.toggle("open"));
+// Phones: the sidebar slides over the page. It closes with ✕, by tapping next to it, with Escape,
+// and by itself once a model is ready or a file has been added.
+const narrow = () => window.matchMedia("(max-width: 860px)").matches;
+function setSide(open) {
+  $("#side").classList.toggle("open", open);
+  $("#scrim").hidden = !(open && narrow());
+}
+$("#menu").addEventListener("click", () => setSide(!$("#side").classList.contains("open")));
+$("#side-close").addEventListener("click", () => setSide(false));
+$("#scrim").addEventListener("click", () => setSide(false));
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("#side").classList.contains("open")) setSide(false); });
 
 // ------------------------------------------------------------------ prompt
 
@@ -1835,6 +1847,11 @@ async function addSample() {
     console.error(err);
     toast("Loading failed. Check your connection, or try the Fast model.");
     return;
+  }
+  // One tap from the welcome screen: start the chosen model if none is running, then quiz.
+  if (!state.engine && !state.loading && !$("#load-model").disabled) {
+    const key = $("#model-select").value;
+    if (key === "best" && !isPhone()) await startBestSoon(); else await startModel(key);
   }
   if (state.engine && !state.busy) runQuiz("");
   else toast("Sample notes added. When the model is ready, click Quiz me.");

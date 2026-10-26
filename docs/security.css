@@ -65,3 +65,9 @@ footer a { color: var(--ink-soft); }
 
 /* Arabic letters join up; letter-spacing would pull them apart. */
 [lang="ar"] * { letter-spacing: 0 !important; }
+
+/* Legal page */
+.legal section p, .legal section h3 { max-width: 44em; }
+.legal section h3 { margin-top: 26px; }
+.small-label { font-size: 13.5px; color: var(--ink-soft); }
+.addr { font-size: 17px; line-height: 1.6; }

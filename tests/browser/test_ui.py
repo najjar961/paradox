@@ -419,3 +419,30 @@ def test_start_and_security_pages_contact_no_other_site(browser, site):
         if path == "/":
             assert pg.evaluate("document.fonts.check('800 20px \"Bricolage Grotesque\"')")
         pg.context.close()
+
+
+def test_phone_sidebar_closes_with_x_backdrop_and_when_model_is_ready(browser, site):
+    pg = page_for(browser, width=390)
+    pg.goto(f"{site}/app/#selftest")
+    pg.click("#menu")
+    assert pg.locator("#scrim").is_visible()
+    pg.click("#side-close")
+    assert pg.locator("#scrim").is_hidden()
+    pg.click("#menu")
+    pg.mouse.click(370, 400)  # the darkened area next to the sidebar
+    assert pg.locator("#scrim").is_hidden()
+    pg.click("#menu")
+    pg.click("#load-model")
+    pg.locator("#model-ready").wait_for(state="attached")
+    pg.wait_for_function("() => !document.querySelector('#side').classList.contains('open')")
+    assert pg.locator("#scrim").is_hidden()
+    assert not pg.errors, pg.errors
+
+
+def test_sample_button_starts_the_model_and_quiz_in_one_tap(browser, site):
+    pg = page_for(browser, width=390)
+    pg.goto(f"{site}/app/#selftest")
+    pg.locator("#empty .try-sample").click()
+    pg.locator(".quiz-card").first.wait_for()
+    assert pg.locator("#scrim").is_hidden()
+    assert not pg.errors, pg.errors
