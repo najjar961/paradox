@@ -409,6 +409,7 @@
     "{model} is downloaded. Switching when Paradox is idle\u2026": "{model} ist geladen. Paradox wechselt, sobald es frei ist …",
     "Switched to {model} for the best answers.": "Gewechselt zu {model} für die besten Antworten.",
     "{model} doesn't fit on this graphics card. Paradox stays with {smaller}.": "{model} passt nicht auf diese Grafikkarte. Paradox bleibt bei {smaller}.",
+    "News on X": "Neuigkeiten auf X",
   };
 
   const FR = {
@@ -815,6 +816,7 @@
     "{model} is downloaded. Switching when Paradox is idle\u2026": "{model} est téléchargé. Changement dès que Paradox est libre…",
     "Switched to {model} for the best answers.": "Passé à {model} pour les meilleures réponses.",
     "{model} doesn't fit on this graphics card. Paradox stays with {smaller}.": "{model} ne tient pas sur cette carte graphique. Paradox reste sur {smaller}.",
+    "News on X": "Nouveautés sur X",
   };
 
   const AR = {
@@ -1221,6 +1223,7 @@
     "{model} is downloaded. Switching when Paradox is idle\u2026": "اكتمل تنزيل {model}. سيتم الانتقال عندما يصبح Paradox متفرغاً…",
     "Switched to {model} for the best answers.": "تم الانتقال إلى {model} للحصول على أفضل الأجوبة.",
     "{model} doesn't fit on this graphics card. Paradox stays with {smaller}.": "{model} لا يتسع لبطاقة الرسوميات هذه. سيبقى Paradox على {smaller}.",
+    "News on X": "آخر الأخبار على X",
   };
 
   const LANGS = { en: "English", de: "Deutsch", fr: "Français", ar: "العربية" };
