@@ -209,12 +209,13 @@ def test_lite_works_offline_after_first_visit(browser, site, files):
 def test_static_pages_load_cleanly_on_phones(browser, site):
     for path in ["/", "/security.html", "/app/"]:
         for locale in ["en-US", "de-DE", "fr-FR", "ar-LB"]:
-            pg = page_for(browser, locale=locale, width=390)
-            pg.goto(site + path)
-            pg.wait_for_timeout(300)
-            assert pg.evaluate("document.documentElement.scrollWidth") <= 390, (path, locale)
-            assert not pg.errors, (path, pg.errors)
-            pg.context.close()
+            for width in [320, 390]:
+                pg = page_for(browser, locale=locale, width=width)
+                pg.goto(site + path)
+                pg.wait_for_timeout(300)
+                assert pg.evaluate("document.documentElement.scrollWidth") <= width, (path, locale, width)
+                assert not pg.errors, (path, pg.errors)
+                pg.context.close()
 
 
 # ---------------------------------------------------------------- self-hosted app
