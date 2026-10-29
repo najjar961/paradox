@@ -479,6 +479,29 @@ def test_scam_check_does_not_flag_a_normal_message(browser, site):
     assert not pg.errors, pg.errors
 
 
+def test_anonymise_gives_a_lone_surname_the_full_names_placeholder(browser, site):
+    pg = page_for(browser)
+    pg.goto(f"{site}/app/#selftest")
+    out = pg.evaluate("""async () => {
+      const t = await import("./tools.js");
+      const r = t.pseudonymise("Mieterin: Leyla Haddad. Frau Haddad bekommt zwei Schlüssel. Vermieter: Thomas Becker.",
+        [{type: "name", value: "Haddad"}, {type: "name", value: "Thomas Becker"}, {type: "name", value: "Leyla Haddad"}]);
+      return {text: r.text, tags: r.map.map((m) => m.tag + "=" + m.value)};
+    }""")
+    assert out["text"] == "Mieterin: [NAME_1]. Frau [NAME_1] bekommt zwei Schlüssel. Vermieter: [NAME_2].", out
+    assert out["tags"] == ["[NAME_1]=Leyla Haddad", "[NAME_2]=Thomas Becker"], out
+
+
+def test_page_and_script_from_different_releases_reload_once(browser, site):
+    pg = page_for(browser)
+    pg.route("**/app/index.html*", lambda r: r.fulfill(body=r.fetch().text().replace(
+        'name="paradox-version" content="8"', 'name="paradox-version" content="999"'), content_type="text/html"))
+    pg.goto(f"{site}/app/index.html#selftest")
+    pg.wait_for_url("**fresh=999**")
+    pg.wait_for_timeout(500)
+    assert pg.url.count("fresh=") == 1, pg.url
+
+
 def test_anonymise_replaces_personal_data_and_puts_it_back(browser, site):
     pg = page_for(browser)
     pg.goto(f"{site}/app/#selftest")

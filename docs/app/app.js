@@ -16,6 +16,19 @@ import * as office from "./office.js";
 import * as cmp from "./compare.js";
 import * as tools from "./tools.js";
 
+// Right after an update the site's servers can briefly hand out the new page with the old app.js
+// (or the other way round). If the two don't match, load the page once more; the URL marker
+// makes sure this happens at most once.
+const APP_VERSION = "8";
+{
+  const pageVersion = document.querySelector('meta[name="paradox-version"]')?.content;
+  const url = new URL(location.href);
+  if (pageVersion && pageVersion !== APP_VERSION && url.searchParams.get("fresh") !== pageVersion) {
+    url.searchParams.set("fresh", pageVersion);
+    location.replace(url.href);
+  }
+}
+
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
 
 const $ = (s) => document.querySelector(s);

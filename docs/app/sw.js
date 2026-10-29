@@ -7,7 +7,7 @@
 // the requests the app's background workers make, for the live privacy check in the sidebar:
 // which site, and how many bytes each request sends. It reports that to the open Paradox pages only.
 
-const SHELL_CACHE = "paradox-shell-v7";   // changes with every release (network first)
+const SHELL_CACHE = "paradox-shell-v8";   // changes with every release (network first)
 const VENDOR_CACHE = "paradox-vendor-v2"; // bump only when a file in vendor/ changes
 
 const SHELL = [
@@ -75,7 +75,7 @@ const VENDOR = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (event) => {
