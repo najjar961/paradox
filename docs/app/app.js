@@ -16,14 +16,15 @@ import * as office from "./office.js";
 import * as cmp from "./compare.js";
 import * as tools from "./tools.js";
 
-// Right after an update the site's servers can briefly hand out the new page with the old app.js
-// (or the other way round). If the two don't match, load the page once more; the URL marker
+// Right after an update the site's servers can briefly hand out the new page with an old app.js
+// or tools.js (or the other way round). If the two don't match, load the page once more; the URL marker
 // makes sure this happens at most once.
 const APP_VERSION = "8";
 {
   const pageVersion = document.querySelector('meta[name="paradox-version"]')?.content;
   const url = new URL(location.href);
-  if (pageVersion && pageVersion !== APP_VERSION && url.searchParams.get("fresh") !== pageVersion) {
+  const stale = pageVersion !== APP_VERSION || tools.VERSION !== APP_VERSION;
+  if (pageVersion && stale && url.searchParams.get("fresh") !== pageVersion) {
     url.searchParams.set("fresh", pageVersion);
     location.replace(url.href);
   }
@@ -2290,7 +2291,7 @@ function openAnonymise() {
   find.addEventListener("click", async () => {
     const text = src.value;
     if (!text.trim()) { toast("Paste a text first."); return; }
-    find.disabled = true;
+    find.disabled = true; make.hidden = true; addRow.hidden = true;
     groups.replaceChildren(); groupEls.clear(); items.length = 0;
     for (const f of detectPII(text)) addItem(f.type, f.value);
     if (state.engine) {

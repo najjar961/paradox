@@ -193,6 +193,9 @@ export function combineVerdicts(rule, model) {
   return ORDER[Math.max(ORDER.indexOf(rule), ORDER.indexOf(model))];
 }
 
+// Must match APP_VERSION in app.js and paradox-version in index.html (checked on start).
+export const VERSION = "8";
+
 export const SCAM_RULES = `You check messages for scams and phishing, to protect the user.
 You get the message and a list of warning signs that fixed rules already found. Those signs are facts: never contradict them.
 Reply in exactly this format, in the same language as the user's request:
