@@ -7,12 +7,12 @@
 // the requests the app's background workers make, for the live privacy check in the sidebar:
 // which site, and how many bytes each request sends. It reports that to the open Paradox pages only.
 
-const SHELL_CACHE = "paradox-shell-v6";   // changes with every release (network first)
+const SHELL_CACHE = "paradox-shell-v7";   // changes with every release (network first)
 const VENDOR_CACHE = "paradox-vendor-v2"; // bump only when a file in vendor/ changes
 
 const SHELL = [
   "./", "index.html", "app.js", "app.css", "i18n.js", "layout.js", "office.js", "compare.js",
-  "worker.js", "embed-worker.js", "markdown.js", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png",
+  "worker.js", "embed-worker.js", "markdown.js", "tools.js", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png",
   "samples/statistics-en.md", "samples/statistics-de.md", "samples/statistics-fr.md", "samples/statistics-ar.md",
 ];
 

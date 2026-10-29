@@ -324,3 +324,31 @@ select.lang { width: auto; font: 600 12.5px var(--sans); padding: 6px 8px; borde
 .sample-btn:hover { background: var(--accent); color: var(--accent-ink); }
 /* Very small phones (320–360 px): tighter top bar */
 @media (max-width: 360px) { .top { gap: 8px; padding-inline: 12px; } .top .lang { margin-inline-start: 0; padding-inline: 6px; } }
+
+/* Tools: scam check and anonymise */
+.tool-chip { border-color: var(--accent); }
+.tool-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.tool-card { display: grid; gap: 4px; text-align: start; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); }
+.tool-card strong { color: var(--accent); font-size: 15px; }
+.tool-card span { color: var(--muted); font-size: 13px; line-height: 1.4; }
+.tool-card:hover { border-color: var(--accent); }
+@media (max-width: 480px) { .tool-cards { grid-template-columns: 1fr; } }
+.scam-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+.scam-result h4, .anon-out h4, .anon-back h4 { margin: 14px 0 6px; font-size: 14px; }
+.scam-result ul, .anon-out ul { margin: 0; padding-inline-start: 20px; display: grid; gap: 4px; }
+.verdict { display: grid; gap: 4px; padding: 12px 14px; border-radius: 12px; border: 1.5px solid; }
+.verdict strong { font-size: 18px; }
+.v-scam { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.v-sus { border-color: #c98a1b; background: color-mix(in srgb, #c98a1b 13%, transparent); color: var(--warn-ink); }
+.v-ok { border-color: var(--accent); background: var(--accent-wash); color: var(--accent); }
+.verdict span { color: var(--text); font-size: 14px; }
+.scam-signals li.sev-high { font-weight: 600; }
+.scam-more { display: grid; gap: 8px; margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+.scam-more button { justify-self: start; }
+.anon-out, .anon-back { display: grid; gap: 8px; }
+.anon-out button, .anon-back button { justify-self: start; }
+.modal-body textarea { resize: vertical; }
+.empty .tool-cards { margin: 4px 0 0; }
+.empty .sample-btn { width: 100%; text-align: start; margin-top: 10px; }
+.empty .how { margin-top: 14px; }
+.empty .how summary { cursor: pointer; color: var(--text); font-weight: 600; font-size: 14px; margin-bottom: 8px; }

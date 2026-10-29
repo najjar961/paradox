@@ -181,7 +181,7 @@ def test_task_chip_fills_the_question(browser, site):
     pg.goto(f"{site}/app/#selftest")
     pg.click("#load-model")
     pg.locator("#model-ready").wait_for()
-    pg.locator("#tasks button:not(.quiz-chip)").first.click()
+    pg.locator("#tasks button:not(.quiz-chip):not(.tool-chip)").first.click()
     assert pg.input_value("#chat-input").strip() != ""
     assert not pg.errors, pg.errors
 
@@ -446,4 +446,55 @@ def test_sample_button_starts_the_model_and_quiz_in_one_tap(browser, site):
     pg.locator("#empty .try-sample").click()
     pg.locator(".quiz-card").first.wait_for()
     assert pg.locator("#scrim").is_hidden()
+    assert not pg.errors, pg.errors
+
+
+SCAM_SMS = ("DHL: Ihr Paket konnte nicht zugestellt werden. Bitte zahlen Sie 1,99 € Versandgebühr: "
+            "https://dhl-paket-zustellung.top/de")
+
+
+def test_scam_check_works_without_a_model_and_explains_with_one(browser, site):
+    pg = page_for(browser)
+    pg.goto(f"{site}/app/?tool=scam#selftest")  # a shared link opens the tool directly
+    pg.locator("#scam-text").fill(SCAM_SMS)
+    pg.click("#scam-run")
+    pg.locator(".verdict.v-scam", has_text="Likely a scam").wait_for()
+    assert "no link goes to DHL's real website" in pg.inner_text(".scam-result")
+    # The AI explanation needs a model; the button loads it and checks again.
+    pg.get_by_role("button", name="Explain it with the AI (loads the model)").click()
+    pg.locator(".scam-result", has_text="The link is not the real company website.").wait_for()
+    assert pg.locator(".verdict.v-scam").count() == 1
+    pg.click("#modal-close")
+    assert pg.inner_text("#meter-sent") == "0 bytes"
+    assert not pg.errors, pg.errors
+
+
+def test_scam_check_does_not_flag_a_normal_message(browser, site):
+    pg = page_for(browser)
+    pg.goto(f"{site}/app/#selftest")
+    pg.locator("#empty .open-scam").click()
+    pg.locator("#scam-text").fill("Hi Anna, see you tomorrow at 10 in the office. Your parcel from www.dhl.de arrives Friday.")
+    pg.click("#scam-run")
+    pg.locator(".verdict.v-ok").wait_for()
+    assert not pg.errors, pg.errors
+
+
+def test_anonymise_replaces_personal_data_and_puts_it_back(browser, site):
+    pg = page_for(browser)
+    pg.goto(f"{site}/app/#selftest")
+    pg.locator("#empty .open-anon").click()
+    pg.locator("#anon-text").fill("Sehr geehrte Frau Anna Schulz,\nbitte überweisen Sie an DE89 3704 0044 0532 0130 00. "
+                                  "Frau Schulz erreichen Sie unter anna.schulz@mail.de.")
+    pg.click("#anon-find")
+    pg.locator(".pii-group").first.wait_for()
+    pg.click("#anon-make")
+    clean = pg.input_value("#anon-clean")
+    assert "Anna" not in clean and "Schulz" not in clean and "DE89" not in clean and "@" not in clean, clean
+    assert "[NAME_1]" in clean and "[IBAN_1]" in clean and "[EMAIL_1]" in clean
+    pg.locator("#anon-answer").fill("Dear [Name_1], we received the payment from **IBAN_1**. Reply to [EMAIL 1].")
+    pg.click("#anon-restore")
+    restored = pg.input_value("#anon-restored")
+    assert restored == "Dear Anna Schulz, we received the payment from **DE89 3704 0044 0532 0130 00**. Reply to anna.schulz@mail.de."
+    pg.click("#modal-close")
+    assert pg.inner_text("#meter-sent") == "0 bytes"
     assert not pg.errors, pg.errors

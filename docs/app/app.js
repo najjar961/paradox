@@ -14,6 +14,7 @@ import { parseChanges, applyPdf, applyDocx, locate, closestPassage, detectPII, p
   redactPdf, redactDocx, renderPages, PII_LABELS, listFields, fillForm, fillPrompt, parseFillAnswer, FILL_SYSTEM } from "./layout.js";
 import * as office from "./office.js";
 import * as cmp from "./compare.js";
+import * as tools from "./tools.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
 
@@ -504,6 +505,8 @@ class FakeEngine {
         } else if (/You fill in forms/i.test(sys)) {
           const info = /<info>\n([\s\S]*?)\n<\/info>/.exec(user)?.[1] || "";
           content = JSON.stringify(Object.fromEntries([...info.matchAll(/^\s*([^:\n]+?)\s*:\s*(.+?)\s*$/gm)].map((m) => [m[1], m[2]])));
+        } else if (/check messages for scams/i.test(sys)) {
+          content = "VERDICT: LIKELY_SCAM\nWHY:\n- The link is not the real company website.\nWHAT TO DO:\n- Delete the message.";
         } else if (/practice questions/i.test(sys)) {
           const notes = /<notes>\n([\s\S]*?)\n<\/notes>/.exec(user)?.[1] || "the topic";
           const first = notes.split("\n").map((l) => l.trim()).filter(Boolean)[0] || "the topic";
@@ -913,6 +916,7 @@ $("#meaning").addEventListener("change", () => updateMeaning());
 $("#wipe").addEventListener("click", () => {
   state.docs = [];
   state.history = [];
+  state.anon = null;
   renderDocs();
   renderMeaning();
   $("#messages").replaceChildren(emptyState());
@@ -1817,7 +1821,11 @@ function renderTasks() {
   const quiz = Object.assign(document.createElement("button"), { type: "button", className: "task-chip quiz-chip", textContent: tr("Quiz me") });
   quiz.title = tr("Practice questions from your notes, or on the topic in the box");
   quiz.addEventListener("click", () => runQuiz($("#chat-input").value.trim()));
-  row.replaceChildren(quiz, ...TASKS.map(([label, prompt]) => {
+  const scam = Object.assign(document.createElement("button"), { type: "button", className: "task-chip tool-chip", textContent: tr("Scam check") });
+  scam.addEventListener("click", () => openScamCheck($("#chat-input").value.trim()));
+  const anon = Object.assign(document.createElement("button"), { type: "button", className: "task-chip tool-chip", textContent: tr("Anonymise") });
+  anon.addEventListener("click", () => openAnonymise());
+  row.replaceChildren(quiz, scam, anon, ...TASKS.map(([label, prompt]) => {
     const b = Object.assign(document.createElement("button"), { type: "button", className: "task-chip", textContent: tr(label) });
     b.addEventListener("click", () => {
       const box = $("#chat-input");
@@ -2111,6 +2119,242 @@ $("#meter-details")?.addEventListener("click", () => {
   ]);
 });
 
+// ------------------------------------------------------------------ tools: scam check & anonymise
+// Both run on this device like everything else. The scam check works even before a model is
+// loaded (its fixed rules need no AI); the AI only adds a plain-language explanation.
+
+const SIGNAL_TEXT = {
+  punycode: "Disguised web address: {d}",
+  ip: "The link goes to a bare IP address: {d}",
+  shortener: "A shortened link hides where it really goes: {d}",
+  tld: "Unusual web address ending: {d}",
+  lookalike: "Look-alike of a known brand's address: {d}",
+  http: "Link without encryption (http): {d}",
+  "brand-domain": "Brand name in a web address that doesn't belong to the brand: {d}",
+  "brand-mismatch": "Mentions {d}, but no link goes to {d}'s real website",
+  credentials: "Asks for a password, PIN, TAN or code: “{d}”",
+  giftcards: "Asks for gift cards or crypto: “{d}”",
+  urgency: "Puts you under time pressure: “{d}”",
+  blocked: "Threatens your account or asks you to verify it: “{d}”",
+  money: "Promises money or asks for a small fee: “{d}”",
+  family: "Poses as a family member: “{d}”",
+  newNumber: "Claims to have a new phone number: “{d}”",
+  "move-chat": "Wants to move the conversation to a messenger",
+  generic: "Impersonal greeting: “{d}”",
+};
+const VERDICT_TEXT = {
+  LIKELY_SCAM: ["Likely a scam", "Do not click, reply or pay."],
+  SUSPICIOUS: ["Suspicious", "Be careful. Check it through the company's official app or website before you do anything."],
+  NO_CLEAR_SIGNS: ["No clear warning signs", "That doesn't mean it's safe. When in doubt, contact the sender through their official app or website."],
+};
+const DEFAULT_TIPS = ["Don't click links in the message.", "Open the company's official app or type its address yourself.",
+  "Never share passwords, PINs, TANs or codes."];
+
+async function ocrImage(file, onProgress) {
+  const worker = await getOcrWorker(() => {});
+  worker._onProgress = onProgress;
+  const { data } = await worker.recognize(file);
+  return (data.text || "").trim();
+}
+
+function openScamCheck(prefill = "") {
+  const text = el("textarea", { id: "scam-text", rows: 7, dir: "auto", maxLength: 12000, placeholder: tr("Paste the message, email or SMS here…") });
+  text.value = prefill;
+  const shot = el("input", { type: "file", accept: "image/*", hidden: true });
+  const shotBtn = el("button", { type: "button", className: "ghost", textContent: tr("Use a screenshot") });
+  const status = el("p", { className: "small muted", role: "status" });
+  const result = el("div", { className: "scam-result", role: "status" });
+  const check = el("button", { type: "button", className: "primary", id: "scam-run", textContent: tr("Check") });
+  shotBtn.addEventListener("click", () => shot.click());
+  shot.addEventListener("change", async () => {
+    const f = shot.files[0];
+    if (!f) return;
+    shotBtn.disabled = true;
+    try {
+      status.textContent = tr("Reading the screenshot…");
+      text.value = await ocrImage(f, (p) => { status.textContent = tr("Reading the screenshot… {p}%", { p: Math.round(p * 100) }); });
+      status.textContent = text.value ? tr("Text read from the screenshot. Check it, then press Check.") : tr("No text found in the image.");
+    } catch (err) {
+      console.error(err);
+      status.textContent = tr("Could not read this image.");
+    } finally { shotBtn.disabled = false; shot.value = ""; }
+  });
+  check.addEventListener("click", () => runScamCheck(text.value.trim(), result, status, check));
+  openModal("Is this a scam?", [
+    el("p", { className: "small muted", textContent: tr("Paradox checks the message on this device. Nothing is sent anywhere, so you can paste private messages too.") }),
+    text, el("div", { className: "scam-tools" }, shotBtn, shot), status, result,
+  ], [el("button", { type: "button", className: "ghost", textContent: tr("Close"), onclick: closeModal }), check]);
+  setTimeout(() => text.focus(), 50);
+}
+
+function verdictBox(verdict) {
+  const [title, sub] = VERDICT_TEXT[verdict];
+  const cls = { LIKELY_SCAM: "v-scam", SUSPICIOUS: "v-sus", NO_CLEAR_SIGNS: "v-ok" }[verdict];
+  return el("div", { className: `verdict ${cls}` }, el("strong", { textContent: tr(title) }), el("span", { textContent: tr(sub) }));
+}
+
+async function runScamCheck(message, result, status, check) {
+  if (!message) { toast("Paste a message first."); return; }
+  const signals = tools.scamSignals(message);
+  const rule = tools.ruleVerdict(signals);
+  const sigList = signals.length
+    ? el("ul", { className: "scam-signals" }, ...signals.map((s) => el("li", { className: `sev-${s.severity}`, textContent: tr(SIGNAL_TEXT[s.kind] || s.kind, { d: s.detail }) })))
+    : el("p", { className: "small muted", textContent: tr("The fixed checks found no warning signs.") });
+  const show = (verdict, why, todo, note) => {
+    result.replaceChildren(
+      verdictBox(verdict),
+      el("h4", { textContent: tr("What Paradox found") }), sigList,
+      ...(why.length ? [el("h4", { textContent: tr("Why") }), el("ul", {}, ...why.map((w) => el("li", { textContent: w })))] : []),
+      el("h4", { textContent: tr("What to do") }), el("ul", {}, ...(todo.length ? todo : DEFAULT_TIPS.map((t) => tr(t))).map((t) => el("li", { textContent: t }))),
+      ...(note ? [note] : []),
+      el("p", { className: "small muted", textContent: tr("Paradox can be wrong. The check ran on this device; nothing was sent.") }));
+  };
+  if (!state.engine) {
+    const load = el("button", { type: "button", className: "ghost", textContent: tr("Explain it with the AI (loads the model)") });
+    load.addEventListener("click", async () => {
+      load.disabled = true;
+      const key = $("#model-select").value;
+      if (key === "best" && !isPhone()) await startBestSoon(); else await startModel(key);
+      if (state.engine) runScamCheck(message, result, status, check);
+    });
+    show(rule, [], [], el("div", { className: "scam-more" }, el("p", { className: "small", textContent: tr("This is the result of the fixed checks. The AI can explain it in plain words.") }), load));
+    return;
+  }
+  show(rule, [], [], el("p", { className: "thinking", textContent: tr("The AI is looking at the message…") }));
+  check.disabled = true;
+  try {
+    const answer = await askModel(tools.scamPrompt(message, signals, tr("Check this message.")), 600);
+    const parsed = tools.parseScamAnswer(answer);
+    show(tools.combineVerdicts(rule, parsed.verdict), parsed.why, parsed.todo);
+  } catch (err) {
+    console.error(err);
+    show(rule, [], []);
+  } finally { check.disabled = false; }
+}
+
+// ---- anonymise
+// The mapping between placeholders and real values lives in this page only (state.anon) and is
+// dropped with "Wipe" or when the tab closes.
+state.anon = null;
+
+function openAnonymise() {
+  const src = el("textarea", { id: "anon-text", rows: 7, dir: "auto", placeholder: tr("Paste the text you want to give to ChatGPT or another AI…") });
+  const pick = el("select", { id: "anon-doc" }, el("option", { value: "", textContent: tr("…or use one of your documents") }),
+    ...state.docs.map((d) => el("option", { value: d.id, textContent: d.name })));
+  pick.hidden = !state.docs.length;
+  pick.addEventListener("change", async () => {
+    const d = state.docs.find((x) => x.id === pick.value);
+    if (d) src.value = await documentText(d);
+  });
+  const find = el("button", { type: "button", className: "primary", id: "anon-find", textContent: tr("Find personal data") });
+  const status = el("p", { className: "small muted", role: "status" });
+  const groups = el("div", { className: "pii-groups" });
+  const add = el("input", { type: "text", placeholder: tr("Add a word or name to replace"), maxLength: 200 });
+  const addBtn = el("button", { type: "button", className: "ghost", textContent: tr("Add") });
+  const addRow = el("div", { className: "pii-add", hidden: true }, add, addBtn);
+  const make = el("button", { type: "button", className: "primary", id: "anon-make", textContent: tr("Make anonymous"), hidden: true });
+  const out = el("div", { className: "anon-out" });
+  const back = el("div", { className: "anon-back" });
+
+  const items = [];
+  const groupEls = new Map();
+  const addItem = (type, value, checked = true) => {
+    if (!value || items.some((x) => x.value === value)) return;
+    if (!groupEls.has(type)) {
+      const list = el("ul", {});
+      groups.append(el("fieldset", { className: "pii-group" }, el("legend", { textContent: tr(PII_LABELS[type] || type) }), list));
+      groupEls.set(type, list);
+    }
+    const id = `anon-${items.length}-${Date.now()}`;
+    const box = el("input", { type: "checkbox", checked, id });
+    groupEls.get(type).append(el("li", {}, box, el("label", { htmlFor: id, textContent: value })));
+    items.push({ type, value, box });
+  };
+  const doAdd = () => { const v = add.value.trim(); if (v) { addItem("custom", v); add.value = ""; add.focus(); } };
+  addBtn.addEventListener("click", doAdd);
+  add.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
+
+  find.addEventListener("click", async () => {
+    const text = src.value;
+    if (!text.trim()) { toast("Paste a text first."); return; }
+    find.disabled = true;
+    groups.replaceChildren(); groupEls.clear(); items.length = 0;
+    for (const f of detectPII(text)) addItem(f.type, f.value);
+    if (state.engine) {
+      status.textContent = tr("Looking for names and addresses with the AI…");
+      try {
+        for (const f of parsePiiAnswer(await askModel(piiPrompt(text.slice(0, FULL_DOC_CHARS)), 500), text)) addItem(f.type, f.value);
+      } catch (err) { console.error(err); }
+    }
+    status.textContent = (items.length
+      ? tr("Found {n} item. Untick anything that should stay, add anything that is missing.|Found {n} items. Untick anything that should stay, add anything that is missing.", { n: items.length })
+      : tr("No personal data found automatically. Add words to replace below."))
+      + (state.engine ? "" : tr(" Load a model to also find names and addresses."));
+    addRow.hidden = false; make.hidden = false; find.disabled = false;
+  });
+
+  const copyBtn = (getText) => {
+    const b = el("button", { type: "button", className: "ghost", textContent: tr("Copy") });
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(getText()); b.textContent = tr("Copied"); } catch { b.textContent = tr("Copy failed"); }
+      setTimeout(() => (b.textContent = tr("Copy")), 1500);
+    });
+    return b;
+  };
+
+  const showBack = () => {
+    const answer = el("textarea", { id: "anon-answer", rows: 6, dir: "auto", placeholder: tr("Paste the AI's answer here…") });
+    const put = el("button", { type: "button", className: "primary", id: "anon-restore", textContent: tr("Put the real names back") });
+    const restored = el("div", {});
+    put.addEventListener("click", () => {
+      const r = tools.restore(answer.value, state.anon.map);
+      const ta = el("textarea", { id: "anon-restored", rows: 6, dir: "auto", readOnly: true });
+      ta.value = r.text;
+      restored.replaceChildren(el("p", { className: "small ok", textContent: tr("{n} placeholder replaced.|{n} placeholders replaced.", { n: r.count }) }), ta, copyBtn(() => ta.value));
+    });
+    back.replaceChildren(el("h4", { textContent: tr("2. Got an answer? Put the names back") }),
+      el("p", { className: "small muted", textContent: tr("Paste what the AI wrote. Paradox swaps the placeholders for the real names, here on your device.") }),
+      answer, put, restored);
+  };
+
+  const showOut = () => {
+    const ta = el("textarea", { id: "anon-clean", rows: 7, dir: "auto", readOnly: true });
+    ta.value = state.anon.text;
+    const table = el("table", { className: "meter-table" }, el("tbody", {}, ...state.anon.map.map((m) =>
+      el("tr", {}, el("td", { className: "num", textContent: m.tag }), el("td", { textContent: m.value })))));
+    out.replaceChildren(
+      el("h4", { textContent: tr("1. Copy this into ChatGPT or any AI") }),
+      el("p", { className: "small muted", textContent: tr("The real names and numbers are replaced. The list of what stands for what stays on this device and is gone when you close the tab.") }),
+      ta, copyBtn(() => ta.value),
+      el("details", {}, el("summary", { className: "small", textContent: tr("Show what each placeholder stands for") }), table));
+    showBack();
+  };
+
+  make.addEventListener("click", () => {
+    const chosen = items.filter((x) => x.box.checked).map(({ type, value }) => ({ type, value }));
+    if (!chosen.length) { toast("Select at least one item."); return; }
+    state.anon = tools.pseudonymise(src.value, chosen);
+    showOut();
+    out.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+  openModal("Anonymise for ChatGPT", [
+    el("p", { className: "small muted", textContent: tr("Replace names, emails, phone numbers and bank details with placeholders, then use any AI safely. Paradox puts the real names back into the answer, on this device.") }),
+    src, pick, find, status, groups, addRow, make, out, back,
+  ], [el("button", { type: "button", className: "ghost", textContent: tr("Close"), onclick: closeModal })]);
+  if (state.anon) { src.value = ""; showOut(); }
+  setTimeout(() => src.focus(), 50);
+}
+
+// Links like …/app/?tool=scam open a tool straight away (for posts and shared links).
+function openToolFromLink() {
+  const tool = new URLSearchParams(location.search).get("tool");
+  if (tool === "scam") openScamCheck();
+  else if (tool === "anon") openAnonymise();
+}
+document.querySelectorAll(".open-scam").forEach((b) => b.addEventListener("click", () => openScamCheck()));
+document.querySelectorAll(".open-anon").forEach((b) => b.addEventListener("click", () => openAnonymise()));
+
 // ------------------------------------------------------------------ install & offline
 
 // The service worker (sw.js) keeps a copy of this app's own files so it opens without
@@ -2170,6 +2414,7 @@ window.i18n.onChange(relabel);
 initModelCard();
 loadLabel("Download & start");
 relabel();
+openToolFromLink();
 // Warn before closing with work on the page, since nothing can be recovered afterwards.
 window.addEventListener("beforeunload", (e) => {
   if (state.docs.length || state.history.length) { e.preventDefault(); e.returnValue = ""; }
